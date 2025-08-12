@@ -630,43 +630,65 @@ class DocumentTransformer:
     def _create_learning_style_document(self, query_results: Dict[str, List[Dict[str, Any]]]) -> TransformedDocument:
         """Create learning style document from study method and preference queries"""
         
+        logger.info("Attempting to create LEARNING_STYLE document.")
+        
         try:
-            # Extract data from relevant queries
-            learning_style = query_results.get("learningStyleQuery", [])
-            study_method = query_results.get("studyMethodQuery", [])
+            # ▼▼▼ [수정 1] 실제 구현된 쿼리 키를 사용합니다. ▼▼▼
+            learning_style_results = query_results.get("learningStyleQuery", [])
+            chart_results = query_results.get("learningStyleChartQuery", [])
+
+            # 1. 데이터가 제대로 들어왔는지 확인
+            logger.info(f"Received learningStyleQuery data: {learning_style_results}")
+            logger.info(f"Received learningStyleChartQuery data: {chart_results}")
+
+            # learningStyleQuery는 결과가 항상 1개 row이므로, 데이터가 없으면 진행하지 않습니다.
+            if not learning_style_results:
+                raise DocumentTransformationError(DocumentType.LEARNING_STYLE, "learningStyleQuery returned no data.")
+
+            # ▼▼▼ [수정 2] 실제 데이터 구조에 맞게 데이터를 추출합니다. ▼▼▼
+            style_info = self._safe_get(learning_style_results)
             
-            learning_data = self._safe_get(learning_style)
-            study_data = self._safe_get(study_method)
-            
+            # 차트 데이터를 'S'(Style)와 'W'(Way/Method)로 분리합니다.
+            style_chart_data = [d for d in chart_results if d.get("item_type") == 'S']
+            method_chart_data = [d for d in chart_results if d.get("item_type") == 'W']
+
             # Build content structure
             content = {
-                "preferred_learning_style": self._safe_get_value(learning_data, "learning_style", ""),
-                "study_methods": {
-                    "most_effective": self._safe_get_value(study_data, "most_effective_method", ""),
-                    "least_effective": self._safe_get_value(study_data, "least_effective_method", ""),
-                    "recommended_techniques": self._safe_get_value(study_data, "recommended_techniques", []),
-                    "study_environment": self._safe_get_value(study_data, "preferred_environment", "")
+                "primary_tendency_style": {
+                    "name": self._safe_get_value(style_info, "tnd1_name", ""),
+                    "study_tendency_description": self._safe_get_value(style_info, "tnd1_study_tendency", ""),
+                    "study_way_description": self._safe_get_value(style_info, "tnd1_study_way", "")
                 },
-                "academic_recommendations": {
-                    "subject_preferences": self._safe_get_value(learning_data, "subject_preferences", []),
-                    "learning_pace": self._safe_get_value(learning_data, "learning_pace", ""),
-                    "group_vs_individual": self._safe_get_value(learning_data, "group_preference", ""),
-                    "theoretical_vs_practical": self._safe_get_value(learning_data, "approach_preference", "")
+                "secondary_tendency_style": {
+                    "name": self._safe_get_value(style_info, "tnd2_name", ""),
+                    "study_tendency_description": self._safe_get_value(style_info, "tnd2_study_tendency", ""),
+                    "study_way_description": self._safe_get_value(style_info, "tnd2_study_way", "")
+                },
+                "style_chart_data": style_chart_data,
+                "method_chart_data": method_chart_data,
+                "chart_coordinates": {
+                    "row": self._safe_get_value(style_info, "tnd_row"),
+                    "col": self._safe_get_value(style_info, "tnd_col")
                 }
             }
             
-            # Create summary text
-            summary_text = f"선호하는 학습 스타일은 {content['preferred_learning_style']}이며, " \
-                          f"가장 효과적인 학습 방법은 {content['study_methods']['most_effective']}입니다."
-            
+            # ▼▼▼ [수정 3] 실제 데이터를 기반으로 요약 텍스트를 생성합니다. ▼▼▼
+            summary_text = (
+                f"사용자의 주요 학습 성향은 '{content['primary_tendency_style']['name']}'이며, 보조 학습 성향은 '{content['secondary_tendency_style']['name']}'입니다. "
+                f"주요 공부 성향에 대해 설명하자면, {content['primary_tendency_style']['study_tendency_description']} "
+                f"이를 바탕으로 추천하는 공부 방법은 {content['primary_tendency_style']['study_way_description']}"
+            )
+
             # Create metadata
             metadata = {
-                "document_version": "1.0",
+                "document_version": "1.1", # 버전 업데이트
                 "created_at": datetime.now().isoformat(),
-                "data_sources": ["learningStyleQuery", "studyMethodQuery"],
-                "learning_style": content["preferred_learning_style"]
+                "data_sources": ["learningStyleQuery", "learningStyleChartQuery"],
+                "primary_style_name": content['primary_tendency_style']['name']
             }
             
+            logger.info(f"Successfully created LEARNING_STYLE content and summary.")
+
             return TransformedDocument(
                 doc_type=DocumentType.LEARNING_STYLE,
                 content=content,
@@ -675,7 +697,8 @@ class DocumentTransformer:
             )
             
         except Exception as e:
-            logger.error(f"Error creating learning style document: {e}")
+            # 예상치 못한 오류를 로그에 상세히 기록합니다.
+            logger.error(f"Error creating learning style document: {e}", exc_info=True)
             raise DocumentTransformationError(DocumentType.LEARNING_STYLE, str(e))
     
     def _create_competency_analysis_document(self, query_results: Dict[str, List[Dict[str, Any]]]) -> TransformedDocument:
