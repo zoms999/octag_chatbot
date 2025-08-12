@@ -360,6 +360,7 @@ class DocumentTransformer:
             stats = self._safe_get(query_results.get("imagePreferenceStatsQuery", []))
             preferences = query_results.get("preferenceDataQuery", [])
 
+            # ▼▼▼ [6단계 수정] 데이터가 없는 경우 에러를 발생시켜 안전하게 건너뛰도록 합니다. ▼▼▼
             if not preferences:
                 raise DocumentTransformationError(DocumentType.PREFERENCE_ANALYSIS, "preferenceDataQuery returned no data.")
 
@@ -375,7 +376,7 @@ class DocumentTransformer:
             )
             
             metadata = {
-                "document_version": "1.3", "created_at": datetime.now().isoformat(),
+                "document_version": "1.5", "created_at": datetime.now().isoformat(),
                 "data_sources": ["imagePreferenceStatsQuery", "preferenceDataQuery"],
                 "top_preference_name": top_pref_names[0]
             }

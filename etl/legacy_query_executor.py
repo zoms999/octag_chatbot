@@ -580,26 +580,41 @@ class LegacyQueryExecutor:
         self.query_validators = self._setup_validators()
         self.query_timeout = query_timeout
         
+        # ▼▼▼ [6단계 수정] 실제로 구현된 쿼리 목록을 클래스 변수로 관리합니다. ▼▼▼
+        self.IMPLEMENTED_QUERIES = [
+            "tendencyQuery", "topTendencyQuery", "thinkingSkillsQuery",
+            "careerRecommendationQuery", "bottomTendencyQuery",
+            "personalityDetailQuery", "strengthsWeaknessesQuery",
+            "learningStyleQuery", "learningStyleChartQuery",
+            "competencyAnalysisQuery", "competencySubjectsQuery",
+            "competencyJobsQuery", "competencyJobMajorsQuery", "dutiesQuery",
+            "imagePreferenceStatsQuery", "preferenceDataQuery", "preferenceJobsQuery",
+            "tendencyStatsQuery", "thinkingSkillComparisonQuery",
+            "personalInfoQuery", "subjectRanksQuery",
+        ]
+
     def _setup_validators(self) -> Dict[str, callable]:
         """Setup validation functions for different query types"""
         return {
-            # ... (기존 9개 유효성 검사기) ...
+            "tendencyQuery": self._validate_tendency_query,
+            "topTendencyQuery": self._validate_top_tendency_query,
+            "thinkingSkillsQuery": self._validate_thinking_skills_query,
+            "careerRecommendationQuery": self._validate_career_recommendation_query,
+            "bottomTendencyQuery": self._validate_top_tendency_query,
+            "personalityDetailQuery": self._validate_personality_detail_query,
+            "strengthsWeaknessesQuery": self._validate_strengths_weaknesses_query,
             "learningStyleQuery": self._validate_learning_style_query,
             "learningStyleChartQuery": self._validate_learning_style_chart_query,
-            # ▼▼▼ [3단계: 추가된 쿼리 유효성 검사기] ▼▼▼
             "competencyAnalysisQuery": self._validate_competency_analysis_query,
             "competencySubjectsQuery": self._validate_competency_subjects_query,
             "competencyJobsQuery": self._validate_competency_jobs_query,
             "competencyJobMajorsQuery": self._validate_competency_job_majors_query,
             "dutiesQuery": self._validate_duties_query,
-            # ▼▼▼ [4단계: 추가된 쿼리 유효성 검사기] ▼▼▼
             "imagePreferenceStatsQuery": self._validate_image_preference_stats_query,
             "preferenceDataQuery": self._validate_preference_data_query,
             "preferenceJobsQuery": self._validate_preference_jobs_query,
-            # ▼▼▼ [5단계: 추가된 쿼리 유효성 검사기] ▼▼▼
             "tendencyStatsQuery": self._validate_tendency_stats_query,
             "thinkingSkillComparisonQuery": self._validate_thinking_skill_comparison_query,
-            # ▼▼▼ [6단계: 추가된 쿼리 유효성 검사기] ▼▼▼
             "personalInfoQuery": self._validate_personal_info_query,
             "subjectRanksQuery": self._validate_subject_ranks_query,
         }
