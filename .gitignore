@@ -13,3 +13,4 @@ logs/
 
 # Kilocode config
 .kilocode/mcp.json
+.kiro/settings/mcp.json
