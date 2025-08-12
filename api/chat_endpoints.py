@@ -304,12 +304,16 @@ async def ask_question(
             conversation_context
         )
         
+        # Calculate processing time
+        processing_time = (datetime.now() - start_time).total_seconds()
+        await metrics_observe("chat_processing_seconds", processing_time)
+        
         # Save conversation to database
         conversation = ChatConversation(
             user_id=user.user_id,
             question=request.question,
             response=response.content,
-            retrieved_doc_ids=[UUID(doc.document.doc_id) for doc in context.retrieved_documents],
+            retrieved_doc_ids=[doc.document.doc_id if isinstance(doc.document.doc_id, UUID) else UUID(doc.document.doc_id) for doc in context.retrieved_documents],
             confidence_score=response.confidence_score,
             processing_time=processing_time,
             question_category=context.context_metadata.get("question_category"),
@@ -321,10 +325,6 @@ async def ask_question(
         db.add(conversation)
         await db.commit()
         await db.refresh(conversation)
-        
-        # Calculate processing time
-        processing_time = (datetime.now() - start_time).total_seconds()
-        await metrics_observe("chat_processing_seconds", processing_time)
         
         # Format retrieved documents for response
         retrieved_docs = []
@@ -574,7 +574,7 @@ async def websocket_endpoint(
                         user_id=user.user_id,
                         question=question,
                         response=response.content,
-                        retrieved_doc_ids=[UUID(doc.document.doc_id) for doc in context.retrieved_documents]
+                        retrieved_doc_ids=[doc.document.doc_id if isinstance(doc.document.doc_id, UUID) else UUID(doc.document.doc_id) for doc in context.retrieved_documents]
                     )
                     
                     db.add(conversation)

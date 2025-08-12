@@ -97,8 +97,14 @@ class VectorSearchService:
         start_time = time.time()
         
         try:
-            # Validate query vector
-            if not search_query.query_vector or len(search_query.query_vector) != 768:
+            # Validate query vector - handle both List[float] and EmbeddingResult
+            query_vector = search_query.query_vector
+            if hasattr(query_vector, 'embedding'):
+                # Handle EmbeddingResult object
+                query_vector = query_vector.embedding
+                search_query.query_vector = query_vector  # Update for consistency
+            
+            if not query_vector or len(query_vector) != 768:
                 raise VectorSearchError("Query vector must be 768-dimensional")
             
             # Build base query

@@ -21,6 +21,9 @@ from rag.question_processor import ConversationContext
 from database.models import ChatConversation
 from monitoring.metrics import observe as metrics_observe, inc as metrics_inc
 
+# 최상단 import 근처
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv(), override=False)  # .env 자동 로드
 
 class ResponseQuality(Enum):
     EXCELLENT = "excellent"
@@ -52,10 +55,9 @@ class ResponseGenerator:
     def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-1.5-flash"):
         self.logger = logging.getLogger(__name__)
         
-        api_key = api_key or os.getenv("GEMINI_API_KEY")
+        api_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable or api_key parameter is required")
-        
+            raise ValueError("Missing API key: set GEMINI_API_KEY or GOOGLE_API_KEY, or pass api_key param")
         genai.configure(api_key=api_key)
         self.model_name = model_name
         
