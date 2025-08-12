@@ -113,7 +113,7 @@ class TestResponseGenerator:
                 
                 mock_configure.assert_called_once_with(api_key=mock_api_key)
                 mock_model.assert_called_once()
-                assert generator.model_name == "gemini-1.5-flash"
+                assert generator.model_name == "gemini-2.0-flash"
                 assert isinstance(generator.conversation_memories, dict)
     
     def test_initialization_with_env_var(self, mock_api_key):
@@ -407,7 +407,7 @@ class TestResponseGenerator:
         assert "model_name" in info
         assert "generation_config" in info
         assert "active_conversations" in info
-        assert info["model_name"] == "gemini-1.5-flash"
+        assert info["model_name"] == "gemini-2.0-flash"
         assert isinstance(info["generation_config"], dict)
         assert isinstance(info["active_conversations"], int)
     

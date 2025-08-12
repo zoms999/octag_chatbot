@@ -52,7 +52,7 @@ class ConversationMemory:
 
 
 class ResponseGenerator:
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.0-flash"):
         self.logger = logging.getLogger(__name__)
         
         api_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
