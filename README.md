@@ -1,131 +1,141 @@
-# Aptitude Chatbot RAG System
+# Aptitude Chatbot RAG 시스템
 
-An intelligent conversational AI system that transforms static aptitude test reports into dynamic, interactive conversations using Retrieval-Augmented Generation (RAG) technology.
+이 문서는 정적인 적성 검사 보고서를 RAG(Retrieval-Augmented Generation) 기술을 활용하여 동적이고 상호작용적인 대화형 AI 시스템으로 전환하는 Aptitude Chatbot RAG 시스템에 대한 상세한 설명을 제공합니다.
 
-## Overview
+## 프로젝트 개요
 
-This system processes aptitude test results into semantic documents optimized for vector search and enables users to have natural language conversations about their personality profiles, thinking skills, and career recommendations.
+Aptitude Chatbot RAG 시스템은 사용자의 적성 검사 결과를 분석하여 개인의 성격 유형, 사고 능력, 그리고 직업 추천에 대한 자연어 대화를 가능하게 하는 지능형 대화형 AI 시스템입니다. 이 시스템은 원시 테스트 데이터를 벡터 검색에 최적화된 의미론적 문서로 변환하고, 이를 통해 사용자가 자신의 프로필에 대해 깊이 있고 상호작용적인 대화를 나눌 수 있도록 지원합니다.
 
-## Architecture
+## 주요 기능 및 특징
 
-- **Authentication System**: JWT-based authentication supporting personal and organization users
-- **ETL Pipeline**: Transforms raw test data into semantic documents
-- **Vector Database**: PostgreSQL with pgvector for similarity search
-- **RAG Engine**: Google Gemini for embeddings and response generation
-- **API Layer**: FastAPI for REST endpoints and WebSocket support
+*   **개인화된 대화 경험**: 사용자의 적성 검사 결과를 기반으로 맞춤형 대화를 제공하여, 자신의 강점과 약점을 더 잘 이해하고 미래 계획을 세울 수 있도록 돕습니다.
+*   **정확하고 신뢰할 수 있는 정보**: RAG 기술을 통해 관련성 높은 문서를 검색하고 이를 기반으로 응답을 생성하여, 정확하고 신뢰할 수 있는 정보를 제공합니다.
+*   **확장 가능한 아키텍처**: 모듈화된 구성 요소를 통해 시스템의 유연성과 확장성을 보장하며, 향후 기능 추가 및 성능 개선이 용이합니다.
+*   **보안 및 사용자 관리**: JWT 기반 인증 시스템을 통해 개인 및 조직 사용자의 데이터를 안전하게 보호하고 관리합니다.
 
-## Database Setup
+## 시스템 아키텍처
 
-### Prerequisites
+Aptitude Chatbot RAG 시스템은 다음과 같은 핵심 구성 요소로 이루어져 있습니다.
 
-1. PostgreSQL 14+ with pgvector extension
-2. Python 3.9+
-3. Required Python packages (see requirements.txt)
+*   **인증 시스템 (Authentication System)**: JWT(JSON Web Token) 기반의 인증 시스템으로, 개인 사용자 및 조직 사용자를 모두 지원합니다. 사용자 로그인, 토큰 발급 및 검증, 사용자 정보 관리 등의 기능을 담당합니다.
+*   **ETL 파이프라인 (ETL Pipeline)**: 원시 적성 검사 데이터를 추출(Extract), 변환(Transform), 적재(Load)하여 벡터 검색에 최적화된 의미론적 문서로 만듭니다. 이 과정에서 데이터는 정규화되고 임베딩을 위한 형태로 가공됩니다.
+*   **벡터 데이터베이스 (Vector Database)**: PostgreSQL과 `pgvector` 확장을 사용하여 벡터 임베딩을 저장하고 관리합니다. 이를 통해 고차원 벡터 공간에서 효율적인 유사성 검색을 수행할 수 있습니다.
+*   **RAG 엔진 (RAG Engine)**: Google Gemini 모델을 활용하여 문서 임베딩을 생성하고, 검색된 문서를 기반으로 사용자 질문에 대한 응답을 생성합니다. 이는 검색(Retrieval)과 생성(Generation)을 결합하여 답변의 정확성과 유창성을 높입니다.
+*   **API 레이어 (API Layer)**: FastAPI 프레임워크를 사용하여 RESTful API 엔드포인트와 WebSocket 지원을 제공합니다. 프론트엔드 애플리케이션 및 다른 서비스와의 통신을 담당합니다.
 
-### Installation
+## 데이터베이스 설정
 
-1. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 전제 조건
 
-2. **Configure environment:**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your database credentials
-   ```
+1.  PostgreSQL 14+ 및 `pgvector` 확장
+2.  Python 3.9+
+3.  `requirements.txt`에 명시된 Python 패키지
 
-3. **Set up database:**
-   ```bash
-   python scripts/setup_database.py
-   ```
+### 설치 방법
 
-### Manual Database Setup
+1.  **의존성 설치**:
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-If you prefer to set up the database manually:
+2.  **환경 설정**:
+    ```bash
+    cp .env.example .env
+    # .env 파일을 열어 데이터베이스 자격 증명을 설정합니다.
+    ```
 
-1. **Create database:**
-   ```sql
-   CREATE DATABASE aptitude_chatbot;
-   ```
+3.  **데이터베이스 설정**:
+    ```bash
+    python scripts/setup_database.py
+    ```
 
-2. **Enable pgvector extension:**
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS vector;
-   CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-   ```
+### 수동 데이터베이스 설정 (선택 사항)
 
-3. **Run migrations:**
-   ```bash
-   python database/migration_manager.py migrate
-   ```
+수동으로 데이터베이스를 설정하려면 다음 단계를 따르세요.
 
-## Database Schema
+1.  **데이터베이스 생성**:
+    ```sql
+    CREATE DATABASE aptitude_chatbot;
+    ```
 
-### Core Tables
+2.  **pgvector 확장 활성화**:
+    ```sql
+    CREATE EXTENSION IF NOT EXISTS vector;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    ```
 
-- **chat_users**: User management and test completion tracking
-- **chat_documents**: Semantic documents with vector embeddings
-- **chat_jobs**: Job information with career matching vectors
-- **chat_majors**: Academic major data with similarity vectors
-- **chat_conversations**: Chat history and context tracking
+3.  **마이그레이션 실행**:
+    ```bash
+    python database/migration_manager.py migrate
+    ```
 
-### Vector Search
+## 데이터베이스 스키마
 
-The system uses pgvector with HNSW indexes for efficient similarity search:
-- 768-dimensional vectors (Google Gemini embedding size)
-- Cosine similarity for document matching
-- Optimized for sub-second search performance
+### 핵심 테이블
 
-## Testing
+*   **chat_users**: 사용자 관리 및 테스트 완료 추적
+*   **chat_documents**: 벡터 임베딩을 포함한 의미론적 문서
+*   **chat_jobs**: 직업 정보 및 경력 매칭 벡터
+*   **chat_majors**: 학과 데이터 및 유사성 벡터
+*   **chat_conversations**: 채팅 기록 및 컨텍스트 추적
 
-Run the database setup tests:
+### 벡터 검색
+
+시스템은 효율적인 유사성 검색을 위해 HNSW 인덱스와 함께 `pgvector`를 사용합니다.
+
+*   768차원 벡터 (Google Gemini 임베딩 크기)
+*   문서 매칭을 위한 코사인 유사도
+*   서브-초 검색 성능에 최적화
+
+## 테스트
+
+데이터베이스 설정 테스트를 실행합니다.
 
 ```bash
 pytest tests/test_database_setup.py -v
 ```
 
-## Migration Management
+## 마이그레이션 관리
 
-Check migration status:
+마이그레이션 상태 확인:
 ```bash
 python database/migration_manager.py status
 ```
 
-Run pending migrations:
+대기 중인 마이그레이션 실행:
 ```bash
 python database/migration_manager.py migrate
 ```
 
-Rollback a migration:
+마이그레이션 롤백:
 ```bash
 python database/migration_manager.py rollback 001
 ```
 
-## Environment Variables
+## 환경 변수
 
-| Variable | Description | Default |
+| 변수 | 설명 | 기본값 |
 |----------|-------------|---------|
-| DB_HOST | Database host | localhost |
-| DB_PORT | Database port | 5432 |
-| DB_NAME | Database name | aptitude_chatbot |
-| DB_USER | Database user | postgres |
-| DB_PASSWORD | Database password | (required) |
-| DB_POOL_SIZE | Connection pool size | 10 |
-| DB_ECHO | Enable SQL logging | false |
-| JWT_SECRET_KEY | JWT signing secret | (required) |
-| JWT_ALGORITHM | JWT algorithm | HS256 |
-| JWT_EXPIRATION_HOURS | Token expiration time | 24 |
-| ADMIN_TOKEN | Admin access token | (optional) |
-| AUTH_DISABLED | Disable authentication | false |
+| DB_HOST | 데이터베이스 호스트 | localhost |
+| DB_PORT | 데이터베이스 포트 | 5432 |
+| DB_NAME | 데이터베이스 이름 | aptitude_chatbot |
+| DB_USER | 데이터베이스 사용자 | postgres |
+| DB_PASSWORD | 데이터베이스 비밀번호 | (필수) |
+| DB_POOL_SIZE | 연결 풀 크기 | 10 |
+| DB_ECHO | SQL 로깅 활성화 | false |
+| JWT_SECRET_KEY | JWT 서명 비밀 키 | (필수) |
+| JWT_ALGORITHM | JWT 알고리즘 | HS256 |
+| JWT_EXPIRATION_HOURS | 토큰 만료 시간 (시간) | 24 |
+| ADMIN_TOKEN | 관리자 접근 토큰 | (선택 사항) |
+| AUTH_DISABLED | 인증 비활성화 | false |
 
-## API Usage
+## API 사용법
 
-### Authentication
+### 인증
 
-The system supports two types of login:
+시스템은 두 가지 유형의 로그인을 지원합니다.
 
-#### 1. Personal User Login
+#### 1. 개인 사용자 로그인
 ```bash
 curl -X POST "http://localhost:8000/api/auth/login" \
   -H "Content-Type: application/json" \
@@ -136,7 +146,7 @@ curl -X POST "http://localhost:8000/api/auth/login" \
   }'
 ```
 
-#### 2. Organization User Login
+#### 2. 조직 사용자 로그인
 ```bash
 curl -X POST "http://localhost:8000/api/auth/login" \
   -H "Content-Type: application/json" \
@@ -148,17 +158,17 @@ curl -X POST "http://localhost:8000/api/auth/login" \
   }'
 ```
 
-#### 3. Using JWT Token
-After successful login, use the JWT token in subsequent requests:
+#### 3. JWT 토큰 사용
+성공적인 로그인 후, 다음 요청에서 JWT 토큰을 사용합니다.
 
 ```bash
 curl -X GET "http://localhost:8000/api/auth/me" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
-### Chat API
+### 채팅 API
 
-#### Ask a Question
+#### 질문하기
 ```bash
 curl -X POST "http://localhost:8000/api/chat/question" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
@@ -169,32 +179,32 @@ curl -X POST "http://localhost:8000/api/chat/question" \
   }'
 ```
 
-#### Get Conversation History
+#### 대화 기록 가져오기
 ```bash
 curl -X GET "http://localhost:8000/api/chat/history/your_user_id" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
-### Testing Authentication
+### 인증 테스트
 
-Run the authentication test script:
+인증 테스트 스크립트를 실행합니다.
 
 ```bash
 python test_auth_system.py
 ```
 
-This script will guide you through testing:
-- Personal and organization login
-- Token verification
-- Protected endpoint access
-- User information retrieval
+이 스크립트는 다음 테스트를 안내합니다.
+*   개인 및 조직 로그인
+*   토큰 검증
+*   보호된 엔드포인트 접근
+*   사용자 정보 검색
 
-## Next Steps
+## 다음 단계
 
-After completing the database setup, you can proceed with:
+데이터베이스 설정을 완료한 후, 다음 단계를 진행할 수 있습니다.
 
-1. **Task 2**: Implement core data models and validation
-2. **Task 3**: Build ETL pipeline foundation
-3. **Task 4**: Implement document storage and retrieval system
+1.  **Task 2**: 핵심 데이터 모델 및 유효성 검사 구현
+2.  **Task 3**: ETL 파이프라인 기반 구축
+3.  **Task 4**: 문서 저장 및 검색 시스템 구현
 
-See the full implementation plan in `.kiro/specs/aptitude-chatbot-rag-system/tasks.md`.
+전체 구현 계획은 `.kiro/specs/aptitude-chatbot-rag-system/tasks.md`에서 확인할 수 있습니다.
