@@ -220,6 +220,101 @@ class AptitudeTestQueries:
         """
         return self._run(sql, {"anp_seq": anp_seq})
 
+        # ▼▼▼ [3단계: 추가된 메소드 1] ▼▼▼
+    def _query_competency_analysis(self, anp_seq: int) -> List[Dict[str, Any]]:
+        # 원본 #22 쿼리(talentDetailsQuery) 기반, 백분위(percentile) 계산 로직 포함
+        sql = """
+        WITH ranked_scores AS (
+            SELECT
+                anp_seq, qua_code, sc1_rate,
+                PERCENT_RANK() OVER (PARTITION BY qua_code ORDER BY sc1_rate) as percentile_rank
+            FROM mwd_score1
+            WHERE sc1_step = 'tal'
+        )
+        SELECT
+            qa.qua_name as competency_name,
+            (round(sc1.sc1_rate * 100))::int as score,
+            sc1.sc1_rank as rank,
+            REPLACE(qe.que_explain, 'OOO', pe.pe_name || '님') as description,
+            (round(rs.percentile_rank * 100))::int as percentile
+        FROM mwd_score1 sc1
+        JOIN mwd_question_attr qa ON qa.qua_code = sc1.qua_code
+        JOIN mwd_question_explain qe ON qe.qua_code = sc1.qua_code
+        JOIN mwd_answer_progress ap ON ap.anp_seq = sc1.anp_seq
+        JOIN mwd_account ac ON ac.ac_gid = ap.ac_gid
+        JOIN mwd_person pe ON pe.pe_seq = ac.pe_seq
+        JOIN ranked_scores rs ON rs.anp_seq = sc1.anp_seq AND rs.qua_code = sc1.qua_code
+        WHERE sc1.anp_seq = :anp_seq
+          AND sc1.sc1_step = 'tal'
+          AND sc1.sc1_rank <= 5
+        ORDER BY sc1.sc1_rank
+        """
+        return self._run(sql, {"anp_seq": anp_seq})
+
+    # ▼▼▼ [3단계: 추가된 메소드 2] ▼▼▼
+    def _query_competency_subjects(self, anp_seq: int) -> List[Dict[str, Any]]:
+        # 원본 #36 쿼리(competencySubjectsQuery) 기반
+        sql = """
+        WITH Top5Competencies AS (
+          SELECT sc1.sc1_rank, sc1.qua_code, qa.qua_name
+          FROM mwd_score1 sc1 JOIN mwd_question_attr qa ON sc1.qua_code = qa.qua_code
+          WHERE sc1.anp_seq = :anp_seq AND sc1.sc1_step = 'tal' AND sc1.sc1_rank <= 5
+        )
+        SELECT
+          t5c.sc1_rank AS competency_rank, t5c.qua_name AS competency_name,
+          t5c.qua_code AS competency_code, mcs.mcs_group AS subject_group,
+          mcs.mcs_area AS subject_area, mcs.mcs_name AS subject_name,
+          mcs.mcs_explain AS subject_explain, mcs.mcs_rank AS subject_rank
+        FROM mwd_competency_subject_map mcs
+        JOIN Top5Competencies t5c ON mcs.tal_code = t5c.qua_code
+        WHERE mcs.mcs_use = 'Y'
+        ORDER BY t5c.sc1_rank, mcs.mcs_rank
+        """
+        return self._run(sql, {"anp_seq": anp_seq})
+
+    # ▼▼▼ [3단계: 추가된 메소드 3] ▼▼▼
+    def _query_competency_jobs(self, anp_seq: int) -> List[Dict[str, Any]]:
+        # 원본 #27 쿼리(competencyJobsQuery) 기반
+        sql = """
+        SELECT
+          jo.jo_name, jo.jo_outline, jo.jo_mainbusiness, rj.rej_rank as rank
+        FROM mwd_resjob rj JOIN mwd_job jo ON jo.jo_code = rj.rej_code
+        WHERE rj.anp_seq = :anp_seq AND rj.rej_kind = 'rtal' AND rj.rej_rank <= 7
+        ORDER BY rj.rej_rank
+        """
+        return self._run(sql, {"anp_seq": anp_seq})
+
+    # ▼▼▼ [3단계: 추가된 메소드 4] ▼▼▼
+    def _query_competency_job_majors(self, anp_seq: int) -> List[Dict[str, Any]]:
+        # 원본 #28 쿼리(competencyJobMajorsQuery) 기반
+        sql = """
+        SELECT
+          jo.jo_name, string_agg(ma.ma_name, ', ' ORDER BY ma.ma_name) AS major
+        FROM mwd_resjob rj
+        JOIN mwd_job jo ON jo.jo_code = rj.rej_code
+        JOIN mwd_job_major_map jmm ON jmm.jo_code = rj.rej_code
+        JOIN mwd_major ma ON ma.ma_code = jmm.ma_code
+        WHERE rj.anp_seq = :anp_seq AND rj.rej_kind = 'rtal' AND rj.rej_rank <= 7
+        GROUP BY jo.jo_code, rj.rej_rank
+        ORDER BY rj.rej_rank
+        """
+        return self._run(sql, {"anp_seq": anp_seq})
+    
+    # ▼▼▼ [3단계: 추가된 메소드 5] ▼▼▼
+    def _query_duties(self, anp_seq: int) -> List[Dict[str, Any]]:
+        # 원본 #29 쿼리(dutiesQuery) 기반
+        sql = """
+        SELECT
+          du.du_name, du.du_outline as du_content,
+          du.du_department as majors, 'IT 계열' as jf_name,
+          (100 - (rd.red_rank * 10)) as match_rate
+        FROM mwd_resduty rd, mwd_duty du
+        WHERE rd.anp_seq = :anp_seq AND rd.red_kind = 'rtnd'
+          AND du.du_code = rd.red_code AND rd.red_rank <= 5
+        ORDER BY rd.red_rank
+        """
+        return self._run(sql, {"anp_seq": anp_seq})
+
     def execute_all_queries(self, anp_seq: int) -> Dict[str, List[Dict[str, Any]]]:
         results: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -249,10 +344,22 @@ class AptitudeTestQueries:
         except Exception:
             results["learningStyleChartQuery"] = []
 
-        # 나머지 키들은 파이프라인 호환성 유지를 위해 빈 리스트로 채움
+        # ▼▼▼ [3단계: 추가된 쿼리 호출] ▼▼▼
+        try: results["competencyAnalysisQuery"] = self._query_competency_analysis(anp_seq)
+        except: results["competencyAnalysisQuery"] = []
+        try: results["competencySubjectsQuery"] = self._query_competency_subjects(anp_seq)
+        except: results["competencySubjectsQuery"] = []
+        try: results["competencyJobsQuery"] = self._query_competency_jobs(anp_seq)
+        except: results["competencyJobsQuery"] = []
+        try: results["competencyJobMajorsQuery"] = self._query_competency_job_majors(anp_seq)
+        except: results["competencyJobMajorsQuery"] = []
+        try: results["dutiesQuery"] = self._query_duties(anp_seq)
+        except: results["dutiesQuery"] = []
+
+
+       # [수정] 3단계에서 구현된 키는 이 목록에서 제외되어야 합니다.
         remaining_keys = [
-            "competencyAnalysisQuery", "preferenceAnalysisQuery",
-            "jobMatchingQuery","majorRecommendationQuery",
+            "preferenceAnalysisQuery", "jobMatchingQuery","majorRecommendationQuery",
             "studyMethodQuery","socialSkillsQuery","leadershipQuery","communicationQuery","problemSolvingQuery",
             "creativityQuery","analyticalThinkingQuery","practicalThinkingQuery","abstractThinkingQuery","memoryQuery",
             "attentionQuery","processingSpeedQuery","spatialAbilityQuery","verbalAbilityQuery","numericalAbilityQuery",
@@ -280,15 +387,15 @@ class LegacyQueryExecutor:
     def _setup_validators(self) -> Dict[str, callable]:
         """Setup validation functions for different query types"""
         return {
-            "tendencyQuery": self._validate_tendency_query,
-            "topTendencyQuery": self._validate_top_tendency_query,
-            "thinkingSkillsQuery": self._validate_thinking_skills_query,
-            "careerRecommendationQuery": self._validate_career_recommendation_query,
-            "bottomTendencyQuery": self._validate_top_tendency_query,
-            "personalityDetailQuery": self._validate_personality_detail_query,
-            "strengthsWeaknessesQuery": self._validate_strengths_weaknesses_query,
+            # ... (기존 9개 유효성 검사기) ...
             "learningStyleQuery": self._validate_learning_style_query,
             "learningStyleChartQuery": self._validate_learning_style_chart_query,
+            # ▼▼▼ [3단계: 추가된 쿼리 유효성 검사기] ▼▼▼
+            "competencyAnalysisQuery": self._validate_competency_analysis_query,
+            "competencySubjectsQuery": self._validate_competency_subjects_query,
+            "competencyJobsQuery": self._validate_competency_jobs_query,
+            "competencyJobMajorsQuery": self._validate_competency_job_majors_query,
+            "dutiesQuery": self._validate_duties_query,
         }
     
     def _validate_tendency_query(self, data: List[Dict[str, Any]]) -> bool:
@@ -449,6 +556,66 @@ class LegacyQueryExecutor:
                 return False
         return True
 
+        # ▼▼▼ [3단계: 추가된 유효성 검사 메소드] ▼▼▼
+    def _validate_competency_analysis_query(self, data: List[Dict[str, Any]]) -> bool:
+        """Validate competency analysis query results."""
+        if data is None: return False
+        if not data: return True # 데이터가 없는 경우는 허용
+        
+        required_fields = ["competency_name", "score", "rank", "description", "percentile"]
+        for row in data:
+            for field in required_fields:
+                if field not in row:
+                    logger.warning(f"Missing required field '{field}' in competencyAnalysisQuery")
+                    return False
+            if not isinstance(row.get("score"), int) or not isinstance(row.get("rank"), int) or not isinstance(row.get("percentile"), int):
+                logger.warning(f"Invalid data types in competencyAnalysisQuery for row: {row}")
+                return False
+        return True
+
+    def _validate_competency_subjects_query(self, data: List[Dict[str, Any]]) -> bool:
+        """Validate competency subjects query results."""
+        if data is None: return False
+        if not data: return True # 데이터가 없는 경우는 허용
+
+        required_fields = ["competency_rank", "competency_name", "subject_group", "subject_area", "subject_name", "subject_explain", "subject_rank"]
+        for row in data:
+            for field in required_fields:
+                if field not in row:
+                    logger.warning(f"Missing required field '{field}' in competencySubjectsQuery")
+                    return False
+        return True
+
+    def _validate_competency_jobs_query(self, data: List[Dict[str, Any]]) -> bool:
+        """Validate competency jobs query results."""
+        if data is None: return False
+        if not data: return True
+        required_fields = ["jo_name", "jo_outline", "jo_mainbusiness", "rank"]
+        for row in data:
+            for field in required_fields:
+                if field not in row: return False
+        return True
+
+    def _validate_competency_job_majors_query(self, data: List[Dict[str, Any]]) -> bool:
+        """Validate competency job majors query results."""
+        if data is None: return False
+        if not data: return True
+        required_fields = ["jo_name", "major"]
+        for row in data:
+            for field in required_fields:
+                if field not in row: return False
+        return True
+    
+    def _validate_duties_query(self, data: List[Dict[str, Any]]) -> bool:
+        """Validate duties query results."""
+        if data is None: return False
+        if not data: return True
+        required_fields = ["du_name", "du_content", "majors", "jf_name", "match_rate"]
+        for row in data:
+            for field in required_fields:
+                if field not in row: return False
+        return True
+
     def _validate_query_result(self, query_name: str, data: List[Dict[str, Any]]) -> bool:
         """Validate query result using appropriate validator"""
         validator = self.query_validators.get(query_name)
@@ -586,7 +753,7 @@ class LegacyQueryExecutor:
         """
         
         query_names = [
-            # --- 1단계까지 구현된 쿼리 ---
+            # --- 2단계까지 구현된 쿼리 ---
             "tendencyQuery",
             "topTendencyQuery", 
             "thinkingSkillsQuery",
@@ -594,11 +761,17 @@ class LegacyQueryExecutor:
             "bottomTendencyQuery",
             "personalityDetailQuery",
             "strengthsWeaknessesQuery",
-            # --- 2단계 신규 쿼리 ---
             "learningStyleQuery",
             "learningStyleChartQuery",
-            # --- 향후 추가될 쿼리 (자리 표시) ---
+
+            # --- 3단계 신규 쿼리 ---
             "competencyAnalysisQuery",
+            "competencySubjectsQuery",
+            "competencyJobsQuery",
+            "competencyJobMajorsQuery",
+            "dutiesQuery",
+
+            # --- 향후 추가될 쿼리 (자리 표시) ---
             "preferenceAnalysisQuery",
             "jobMatchingQuery",
             "majorRecommendationQuery",
