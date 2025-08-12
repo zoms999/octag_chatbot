@@ -372,6 +372,57 @@ class AptitudeTestQueries:
         """
         return self._run(sql, {"anp_seq": anp_seq})
 
+    # ▼▼▼ [5단계: 추가된 메소드 1] ▼▼▼
+    def _query_tendency_stats(self, anp_seq: int) -> List[Dict[str, Any]]:
+        # 원본 #34 쿼리(tendencyStatsQuery) 기반
+        sql = """
+        WITH TendencyCounts AS (
+            SELECT rv_tnd1, COUNT(*) AS tendency_count
+            FROM mwd_resval
+            GROUP BY rv_tnd1
+        ), TotalCount AS (
+            SELECT COUNT(*) AS total_count FROM mwd_resval
+        ), UserTendencies AS (
+            SELECT rv_tnd1, rv_tnd2 FROM mwd_resval WHERE anp_seq = :anp_seq
+        )
+        SELECT
+            qa.qua_name as tendency_name,
+            COALESCE(
+                (ROUND((tc.tendency_count::numeric / tt.total_count) * 100, 1))::float, 0
+            ) as percentage
+        FROM UserTendencies ut
+        JOIN mwd_question_attr qa ON qa.qua_code IN (ut.rv_tnd1, ut.rv_tnd2)
+        LEFT JOIN TendencyCounts tc ON tc.rv_tnd1 = qa.qua_code
+        CROSS JOIN TotalCount tt
+        """
+        return self._run(sql, {"anp_seq": anp_seq})
+
+    # ▼▼▼ [5단계: 추가된 메소드 2] ▼▼▼
+    def _query_thinking_skill_comparison(self, anp_seq: int) -> List[Dict[str, Any]]:
+        # 원본 #35 쿼리(thinkingSkillComparisonQuery) 기반
+        sql = """
+        WITH user_scores AS (
+            SELECT qua_code, sc1_rate * 100 as score
+            FROM mwd_score1
+            WHERE anp_seq = :anp_seq AND sc1_step = 'thk'
+        ),
+        average_scores AS (
+            SELECT qua_code, AVG(sc1_rate * 100) as avg_score
+            FROM mwd_score1
+            WHERE sc1_step = 'thk'
+            GROUP BY qua_code
+        )
+        SELECT
+            qa.qua_name as skill_name,
+            us.score::int as my_score,
+            avgs.avg_score::int as average_score
+        FROM user_scores us
+        JOIN average_scores avgs ON us.qua_code = avgs.qua_code
+        JOIN mwd_question_attr qa ON us.qua_code = qa.qua_code
+        ORDER BY qa.qua_code
+        """
+        return self._run(sql, {"anp_seq": anp_seq})
+
     def execute_all_queries(self, anp_seq: int) -> Dict[str, List[Dict[str, Any]]]:
         results: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -421,8 +472,14 @@ class AptitudeTestQueries:
         try: results["preferenceJobsQuery"] = self._query_preference_jobs(anp_seq)
         except: results["preferenceJobsQuery"] = []
 
+        # ▼▼▼ [5단계: 추가된 쿼리 호출] ▼▼▼
+        try: results["tendencyStatsQuery"] = self._query_tendency_stats(anp_seq)
+        except: results["tendencyStatsQuery"] = []
+        try: results["thinkingSkillComparisonQuery"] = self._query_thinking_skill_comparison(anp_seq)
+        except: results["thinkingSkillComparisonQuery"] = []
 
-       # [수정] 4단계에서 구현된 키는 이 목록에서 제외되어야 합니다.
+
+       # [수정] remaining_keys 목록 업데이트
         remaining_keys = [
             "jobMatchingQuery","majorRecommendationQuery",
             "studyMethodQuery","socialSkillsQuery","leadershipQuery","communicationQuery","problemSolvingQuery",
@@ -465,6 +522,9 @@ class LegacyQueryExecutor:
             "imagePreferenceStatsQuery": self._validate_image_preference_stats_query,
             "preferenceDataQuery": self._validate_preference_data_query,
             "preferenceJobsQuery": self._validate_preference_jobs_query,
+            # ▼▼▼ [5단계: 추가된 쿼리 유효성 검사기] ▼▼▼
+            "tendencyStatsQuery": self._validate_tendency_stats_query,
+            "thinkingSkillComparisonQuery": self._validate_thinking_skill_comparison_query,
         }
     
     def _validate_tendency_query(self, data: List[Dict[str, Any]]) -> bool:
@@ -720,6 +780,31 @@ class LegacyQueryExecutor:
             if row.get("preference_type") not in ["rimg1", "rimg2", "rimg3"]: return False
         return True
 
+    # ▼▼▼ [5단계: 추가된 유효성 검사 메소드] ▼▼▼
+    def _validate_tendency_stats_query(self, data: List[Dict[str, Any]]) -> bool:
+        """Validate tendency stats query results."""
+        if data is None: return False
+        if not data: return True
+        
+        required_fields = ["tendency_name", "percentage"]
+        for row in data:
+            for field in required_fields:
+                if field not in row: return False
+            if not isinstance(row.get("percentage"), float): return False
+        return True
+
+    def _validate_thinking_skill_comparison_query(self, data: List[Dict[str, Any]]) -> bool:
+        """Validate thinking skill comparison query results."""
+        if data is None: return False
+        if not data: return True
+        
+        required_fields = ["skill_name", "my_score", "average_score"]
+        for row in data:
+            for field in required_fields:
+                if field not in row: return False
+            if not isinstance(row.get("my_score"), int) or not isinstance(row.get("average_score"), int): return False
+        return True
+
     def _validate_query_result(self, query_name: str, data: List[Dict[str, Any]]) -> bool:
         """Validate query result using appropriate validator"""
         validator = self.query_validators.get(query_name)
@@ -879,6 +964,10 @@ class LegacyQueryExecutor:
             "imagePreferenceStatsQuery",
             "preferenceDataQuery",
             "preferenceJobsQuery",
+
+            # --- 5단계 신규 쿼리 ---
+            "tendencyStatsQuery",
+            "thinkingSkillComparisonQuery",
 
             # --- 향후 추가될 쿼리 (자리 표시) ---
             "jobMatchingQuery",

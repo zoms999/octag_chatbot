@@ -67,27 +67,24 @@ class DocumentTransformer:
             tendency_data = self._safe_get(query_results.get("tendencyQuery", []))
             top_tendencies = query_results.get("topTendencyQuery", [])
             bottom_tendencies = query_results.get("bottomTendencyQuery", [])
+            tendency_stats = query_results.get("tendencyStatsQuery", [])
             personality_detail = query_results.get("personalityDetailQuery", [])
             strengths_weaknesses = query_results.get("strengthsWeaknessesQuery", [])
             
-            primary_tendency_name = self._safe_get_value(tendency_data, "Tnd1", "알 수 없음")
-            secondary_tendency_name = self._safe_get_value(tendency_data, "Tnd2", "알 수 없음")
-            
-            primary_tendency = self._safe_get([t for t in top_tendencies if t.get('tendency_name', '').startswith(primary_tendency_name)])
-            secondary_tendency = self._safe_get([t for t in top_tendencies if t.get('tendency_name', '').startswith(secondary_tendency_name)])
+            primary_name = self._safe_get_value(tendency_data, "Tnd1")
+            secondary_name = self._safe_get_value(tendency_data, "Tnd2")
+
+            primary_stats = self._safe_get([s for s in tendency_stats if s.get('tendency_name', '').startswith(primary_name)])
+            secondary_stats = self._safe_get([s for s in tendency_stats if s.get('tendency_name', '').startswith(secondary_name)])
             
             content = {
                 "primary_tendency": {
-                    "name": self._safe_get_value(primary_tendency, "tendency_name", primary_tendency_name),
-                    "code": self._safe_get_value(primary_tendency, "code", ""),
-                    "rank": self._safe_get_value(primary_tendency, "rank", 1),
-                    "score": self._safe_get_value(primary_tendency, "score", 0),
+                    "name": primary_name,
+                    "percentage": self._safe_get_value(primary_stats, "percentage", 0.0)
                 },
                 "secondary_tendency": {
-                    "name": self._safe_get_value(secondary_tendency, "tendency_name", secondary_tendency_name),
-                    "code": self._safe_get_value(secondary_tendency, "code", ""),
-                    "rank": self._safe_get_value(secondary_tendency, "rank", 2),
-                    "score": self._safe_get_value(secondary_tendency, "score", 0),
+                    "name": secondary_name,
+                    "percentage": self._safe_get_value(secondary_stats, "percentage", 0.0)
                 },
                 "top_tendencies": top_tendencies,
                 "bottom_tendencies": bottom_tendencies,
@@ -96,16 +93,15 @@ class DocumentTransformer:
             }
             
             summary_text = (
-                f"사용자의 주요 성향은 {content['primary_tendency']['name']}이며, 부성향은 {content['secondary_tendency']['name']}입니다. "
-                f"가장 강하게 나타나는 상위 성향들은 {', '.join([t['tendency_name'] for t in content.get('top_tendencies', [])[:3]])}입니다. "
-                f"반면 보완이 필요한 성향으로는 {', '.join([t['tendency_name'] for t in content.get('bottom_tendencies', [])])} 등이 있습니다."
+                f"사용자의 주요 성향은 '{primary_name}'이며, 이는 전체 응답자의 {content['primary_tendency']['percentage']}%에 해당하는 유형입니다. "
+                f"부성향은 '{secondary_name}'(으)로, 전체의 {content['secondary_tendency']['percentage']}%가 이 유형에 속합니다. "
+                f"강점 성향은 {', '.join([t['tendency_name'] for t in top_tendencies])} 등입니다."
             )
             
             metadata = {
-                "document_version": "1.2",
-                "created_at": datetime.now().isoformat(),
-                "data_sources": ["tendencyQuery", "topTendencyQuery", "bottomTendencyQuery", "personalityDetailQuery", "strengthsWeaknessesQuery"],
-                "primary_tendency_code": content['primary_tendency']["code"],
+                "document_version": "1.4", "created_at": datetime.now().isoformat(),
+                "data_sources": ["tendencyQuery", "topTendencyQuery", "bottomTendencyQuery", "tendencyStatsQuery", "personalityDetailQuery", "strengthsWeaknessesQuery"],
+                "primary_tendency_name": primary_name,
             }
             
             return TransformedDocument(
@@ -118,32 +114,38 @@ class DocumentTransformer:
     
     def _create_thinking_skills_document(self, query_results: Dict[str, List[Dict[str, Any]]]) -> TransformedDocument:
         try:
-            thinking_skills = query_results.get("thinkingSkillsQuery", [])
-            if not thinking_skills:
-                raise DocumentTransformationError(DocumentType.THINKING_SKILLS, "thinkingSkillsQuery returned no data.")
+            comparison_data = query_results.get("thinkingSkillComparisonQuery", [])
+            if not comparison_data:
+                raise DocumentTransformationError(DocumentType.THINKING_SKILLS, "thinkingSkillComparisonQuery returned no data.")
 
-            core_skills = sorted(thinking_skills, key=lambda x: x.get('score', 0), reverse=True)
-            avg_score = sum(s.get('score', 0) for s in core_skills) / len(core_skills) if core_skills else 0
+            skills_with_avg = {item['skill_name']: item for item in comparison_data}
+            
+            thinking_skills_raw = query_results.get("thinkingSkillsQuery", [])
+            for skill_raw in thinking_skills_raw:
+                skill_name = skill_raw.get('skill_name')
+                if skill_name in skills_with_avg:
+                    skills_with_avg[skill_name]['percentile'] = skill_raw.get('percentile', 0)
+
+            final_skills = sorted(list(skills_with_avg.values()), key=lambda x: x.get('my_score', 0), reverse=True)
 
             content = {
-                "core_thinking_skills": core_skills,
-                "top_skills": core_skills[:3],
-                "bottom_skills": core_skills[-3:],
-                "overall_analysis": {
-                    "average_score": round(avg_score, 2),
-                    "overall_level": self._get_skill_level(avg_score),
-                }
+                "core_thinking_skills": final_skills,
+                "top_skills": final_skills[:3],
+                "bottom_skills": final_skills[-3:],
             }
 
+            top_skill = content['top_skills'][0]
             summary_text = (
-                f"사용자의 전체적인 사고능력은 평균 {content['overall_analysis']['average_score']:.1f}점으로, '{content['overall_analysis']['overall_level']}' 수준입니다. "
-                f"특히 '{', '.join([s['skill_name'] for s in content['top_skills']])}'에서 강점을 보입니다."
+                f"사용자의 사고력 분석 결과, '{top_skill['skill_name']}'에서 가장 뛰어난 역량을 보입니다. "
+                f"점수는 {top_skill['my_score']}점으로, 전체 평균({top_skill['average_score']}점)보다 월등히 높습니다. "
+                f"전체적으로 {', '.join([s['skill_name'] for s in content['top_skills']])} 영역에서 강점을 보입니다."
             )
 
             metadata = {
-                "document_version": "1.2", "created_at": datetime.now().isoformat(),
-                "data_sources": ["thinkingSkillsQuery"], "skills_analyzed": len(core_skills),
-                "average_score": content['overall_analysis']['average_score']
+                "document_version": "1.4", "created_at": datetime.now().isoformat(),
+                "data_sources": ["thinkingSkillComparisonQuery", "thinkingSkillsQuery"],
+                "skills_analyzed": len(final_skills),
+                "strongest_skill": top_skill['skill_name']
             }
 
             return TransformedDocument(
