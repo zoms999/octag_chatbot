@@ -19,6 +19,7 @@ from sqlalchemy import select, desc
 
 from database.connection import get_async_session
 from database.models import ChatUser, ChatConversation, ChatDocument, ChatFeedback
+from api.auth_endpoints import get_current_user
 from database.repositories import DocumentRepository
 from database.cache import DocumentCache
 from database.vector_search import VectorSearchService
@@ -195,9 +196,17 @@ async def get_user_by_id(user_id: str, db: AsyncSession) -> ChatUser:
 )
 async def submit_feedback(
     payload: FeedbackRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session)
 ):
     try:
+        # Verify authenticated user matches feedback user
+        if current_user["user_id"] != payload.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You can only submit feedback for your own conversations"
+            )
+        
         feedback = ChatFeedback(
             conversation_id=UUID(payload.conversation_id),
             user_id=UUID(payload.user_id),
@@ -221,6 +230,7 @@ async def submit_feedback(
 )
 async def ask_question(
     request: ChatQuestionRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
     rag_components: tuple = Depends(get_rag_components)
 ) -> ChatResponse:
@@ -251,6 +261,13 @@ async def ask_question(
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Rate limit exceeded. Please wait before making another request."
+            )
+        
+        # Verify authenticated user matches request user
+        if current_user["user_id"] != request.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You can only ask questions for your own account"
             )
         
         # Verify user exists
@@ -377,6 +394,7 @@ async def get_conversation_history(
     user_id: str,
     limit: int = 20,
     offset: int = 0,
+    current_user: Dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session)
 ) -> ConversationHistoryResponse:
     """
@@ -406,6 +424,13 @@ async def get_conversation_history(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Offset must be non-negative"
+            )
+        
+        # Verify authenticated user matches request user
+        if current_user["user_id"] != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You can only view your own conversation history"
             )
         
         # Verify user exists

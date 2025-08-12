@@ -16,6 +16,7 @@ import uvicorn
 from api.etl_endpoints import router as etl_router
 from api.chat_endpoints import router as chat_router
 from api.user_endpoints import router as user_router
+from api.auth_endpoints import router as auth_router
 from monitoring.metrics import get_metrics
 from database.connection import init_database
 from etl.logging_config import setup_logging
@@ -61,8 +62,10 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth_router)
 app.include_router(etl_router)
 app.include_router(chat_router)
+app.include_router(user_router)
 
 # Global exception handler
 @app.exception_handler(Exception)
@@ -81,8 +84,10 @@ async def root():
         "message": "Aptitude Chatbot RAG System API",
         "version": "1.0.0",
         "endpoints": {
+            "auth": "/api/auth",
             "chat": "/api/chat",
             "etl": "/api/etl",
+            "users": "/api/users",
             "docs": "/docs",
             "health": "/health"
         }

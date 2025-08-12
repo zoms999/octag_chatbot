@@ -8,6 +8,7 @@ This system processes aptitude test results into semantic documents optimized fo
 
 ## Architecture
 
+- **Authentication System**: JWT-based authentication supporting personal and organization users
 - **ETL Pipeline**: Transforms raw test data into semantic documents
 - **Vector Database**: PostgreSQL with pgvector for similarity search
 - **RAG Engine**: Google Gemini for embeddings and response generation
@@ -112,6 +113,81 @@ python database/migration_manager.py rollback 001
 | DB_PASSWORD | Database password | (required) |
 | DB_POOL_SIZE | Connection pool size | 10 |
 | DB_ECHO | Enable SQL logging | false |
+| JWT_SECRET_KEY | JWT signing secret | (required) |
+| JWT_ALGORITHM | JWT algorithm | HS256 |
+| JWT_EXPIRATION_HOURS | Token expiration time | 24 |
+| ADMIN_TOKEN | Admin access token | (optional) |
+| AUTH_DISABLED | Disable authentication | false |
+
+## API Usage
+
+### Authentication
+
+The system supports two types of login:
+
+#### 1. Personal User Login
+```bash
+curl -X POST "http://localhost:8000/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "your_username",
+    "password": "your_password",
+    "loginType": "personal"
+  }'
+```
+
+#### 2. Organization User Login
+```bash
+curl -X POST "http://localhost:8000/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "your_username",
+    "password": "your_password",
+    "loginType": "organization",
+    "sessionCode": "your_session_code"
+  }'
+```
+
+#### 3. Using JWT Token
+After successful login, use the JWT token in subsequent requests:
+
+```bash
+curl -X GET "http://localhost:8000/api/auth/me" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### Chat API
+
+#### Ask a Question
+```bash
+curl -X POST "http://localhost:8000/api/chat/question" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "your_user_id",
+    "question": "제 성격 유형에 대해 알려주세요"
+  }'
+```
+
+#### Get Conversation History
+```bash
+curl -X GET "http://localhost:8000/api/chat/history/your_user_id" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### Testing Authentication
+
+Run the authentication test script:
+
+```bash
+python test_auth_system.py
+```
+
+This script will guide you through testing:
+- Personal and organization login
+- Token verification
+- Protected endpoint access
+- User information retrieval
 
 ## Next Steps
 

@@ -19,6 +19,11 @@ google-generativeai==0.3.2
 # Environment and configuration
 python-dotenv==1.0.0
 
+# Authentication dependencies
+PyJWT==2.8.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+
 # Logging and monitoring
 structlog==23.2.0
 
