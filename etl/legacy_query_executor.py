@@ -315,6 +315,63 @@ class AptitudeTestQueries:
         """
         return self._run(sql, {"anp_seq": anp_seq})
 
+    # ▼▼▼ [4단계: 추가된 메소드 1] ▼▼▼
+    def _query_image_preference_stats(self, anp_seq: int) -> List[Dict[str, Any]]:
+        # 원본 #19 쿼리(imagePreferenceQuery) 기반
+        sql = """
+        SELECT
+          rv.rv_imgtcnt AS total_image_count,
+          rv.rv_imgrcnt AS response_count,
+          (rv.rv_imgresrate * 100)::int AS response_rate
+        FROM mwd_resval rv
+        WHERE rv.anp_seq = :anp_seq
+        """
+        return self._run(sql, {"anp_seq": anp_seq})
+
+    # ▼▼▼ [4단계: 추가된 메소드 2] ▼▼▼
+    def _query_preference_data(self, anp_seq: int) -> List[Dict[str, Any]]:
+        # 원본 #23 쿼리(preferenceDataQuery) 기반
+        sql = """
+        SELECT
+            qa.qua_name as preference_name,
+            sc1.sc1_qcnt as question_count,
+            (round(sc1.sc1_resrate * 100))::int AS response_rate,
+            sc1.sc1_rank as rank,
+            qe.que_explain as description
+        FROM mwd_score1 sc1
+        JOIN mwd_question_attr qa ON qa.qua_code = sc1.qua_code
+        JOIN mwd_question_explain qe ON qe.qua_code = qa.qua_code AND qe.que_switch = 1
+        WHERE sc1.anp_seq = :anp_seq
+          AND sc1.sc1_step = 'img'
+          AND sc1.sc1_rank <= 3
+        ORDER BY sc1.sc1_rank
+        """
+        return self._run(sql, {"anp_seq": anp_seq})
+
+    # ▼▼▼ [4단계: 추가된 메소드 3] ▼▼▼
+    def _query_preference_jobs(self, anp_seq: int) -> List[Dict[str, Any]]:
+        # 원본 #24, 25, 26 쿼리를 하나로 통합
+        sql = """
+        SELECT
+          qa.qua_name as preference_name,
+          rj.rej_kind as preference_type, -- rimg1, rimg2, rimg3
+          jo.jo_name,
+          jo.jo_outline,
+          jo.jo_mainbusiness,
+          string_agg(ma.ma_name, ', ' ORDER BY ma.ma_name) AS majors
+        FROM mwd_resjob rj
+        JOIN mwd_job jo ON jo.jo_code = rj.rej_code
+        JOIN mwd_job_major_map jmm ON jmm.jo_code = jo.jo_code
+        JOIN mwd_major ma ON ma.ma_code = jmm.ma_code
+        LEFT OUTER JOIN mwd_question_attr qa ON qa.qua_code = rj.rej_quacode
+        WHERE rj.anp_seq = :anp_seq
+          AND rj.rej_kind IN ('rimg1', 'rimg2', 'rimg3')
+          AND rj.rej_rank <= 5
+        GROUP BY rj.rej_kind, qa.qua_name, jo.jo_code, rj.rej_rank
+        ORDER BY rj.rej_kind, rj.rej_rank
+        """
+        return self._run(sql, {"anp_seq": anp_seq})
+
     def execute_all_queries(self, anp_seq: int) -> Dict[str, List[Dict[str, Any]]]:
         results: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -356,10 +413,18 @@ class AptitudeTestQueries:
         try: results["dutiesQuery"] = self._query_duties(anp_seq)
         except: results["dutiesQuery"] = []
 
+        # ▼▼▼ [4단계: 추가된 쿼리 호출] ▼▼▼
+        try: results["imagePreferenceStatsQuery"] = self._query_image_preference_stats(anp_seq)
+        except: results["imagePreferenceStatsQuery"] = []
+        try: results["preferenceDataQuery"] = self._query_preference_data(anp_seq)
+        except: results["preferenceDataQuery"] = []
+        try: results["preferenceJobsQuery"] = self._query_preference_jobs(anp_seq)
+        except: results["preferenceJobsQuery"] = []
 
-       # [수정] 3단계에서 구현된 키는 이 목록에서 제외되어야 합니다.
+
+       # [수정] 4단계에서 구현된 키는 이 목록에서 제외되어야 합니다.
         remaining_keys = [
-            "preferenceAnalysisQuery", "jobMatchingQuery","majorRecommendationQuery",
+            "jobMatchingQuery","majorRecommendationQuery",
             "studyMethodQuery","socialSkillsQuery","leadershipQuery","communicationQuery","problemSolvingQuery",
             "creativityQuery","analyticalThinkingQuery","practicalThinkingQuery","abstractThinkingQuery","memoryQuery",
             "attentionQuery","processingSpeedQuery","spatialAbilityQuery","verbalAbilityQuery","numericalAbilityQuery",
@@ -396,6 +461,10 @@ class LegacyQueryExecutor:
             "competencyJobsQuery": self._validate_competency_jobs_query,
             "competencyJobMajorsQuery": self._validate_competency_job_majors_query,
             "dutiesQuery": self._validate_duties_query,
+            # ▼▼▼ [4단계: 추가된 쿼리 유효성 검사기] ▼▼▼
+            "imagePreferenceStatsQuery": self._validate_image_preference_stats_query,
+            "preferenceDataQuery": self._validate_preference_data_query,
+            "preferenceJobsQuery": self._validate_preference_jobs_query,
         }
     
     def _validate_tendency_query(self, data: List[Dict[str, Any]]) -> bool:
@@ -616,6 +685,41 @@ class LegacyQueryExecutor:
                 if field not in row: return False
         return True
 
+    # ▼▼▼ [4단계: 추가된 유효성 검사 메소드] ▼▼▼
+    def _validate_image_preference_stats_query(self, data: List[Dict[str, Any]]) -> bool:
+        """Validate image preference stats query results."""
+        if data is None: return False
+        if not data: return True
+        if len(data) != 1: return False
+        
+        required_fields = ["total_image_count", "response_count", "response_rate"]
+        for field in required_fields:
+            if field not in data[0]: return False
+        return True
+
+    def _validate_preference_data_query(self, data: List[Dict[str, Any]]) -> bool:
+        """Validate preference data query results."""
+        if data is None: return False
+        if not data: return True
+        
+        required_fields = ["preference_name", "question_count", "response_rate", "rank", "description"]
+        for row in data:
+            for field in required_fields:
+                if field not in row: return False
+        return True
+
+    def _validate_preference_jobs_query(self, data: List[Dict[str, Any]]) -> bool:
+        """Validate preference jobs query results."""
+        if data is None: return False
+        if not data: return True
+        
+        required_fields = ["preference_name", "preference_type", "jo_name", "jo_outline", "jo_mainbusiness", "majors"]
+        for row in data:
+            for field in required_fields:
+                if field not in row: return False
+            if row.get("preference_type") not in ["rimg1", "rimg2", "rimg3"]: return False
+        return True
+
     def _validate_query_result(self, query_name: str, data: List[Dict[str, Any]]) -> bool:
         """Validate query result using appropriate validator"""
         validator = self.query_validators.get(query_name)
@@ -771,8 +875,12 @@ class LegacyQueryExecutor:
             "competencyJobMajorsQuery",
             "dutiesQuery",
 
+            # --- 4단계 신규 쿼리 ---
+            "imagePreferenceStatsQuery",
+            "preferenceDataQuery",
+            "preferenceJobsQuery",
+
             # --- 향후 추가될 쿼리 (자리 표시) ---
-            "preferenceAnalysisQuery",
             "jobMatchingQuery",
             "majorRecommendationQuery",
             "studyMethodQuery",

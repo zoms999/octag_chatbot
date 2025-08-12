@@ -158,32 +158,43 @@ class DocumentTransformer:
         try:
             tendency_jobs = query_results.get("careerRecommendationQuery", [])
             competency_jobs = query_results.get("competencyJobsQuery", [])
+            preference_jobs = query_results.get("preferenceJobsQuery", [])
             duties = query_results.get("dutiesQuery", [])
             
-            if not tendency_jobs and not competency_jobs and not duties:
+            if not any([tendency_jobs, competency_jobs, preference_jobs, duties]):
                  raise DocumentTransformationError(DocumentType.CAREER_RECOMMENDATIONS, "No career recommendation data found.")
+
+            # 선호도 기반 직업 추천을 유형별(rimg1, rimg2, rimg3)로 그룹화
+            pref_jobs_by_type = defaultdict(list)
+            for job in preference_jobs:
+                pref_jobs_by_type[job['preference_type']].append(job)
 
             content = {
                 "tendency_based_jobs": tendency_jobs,
                 "competency_based_jobs": competency_jobs,
+                "preference_based_jobs": dict(pref_jobs_by_type),
                 "recommended_duties": duties,
             }
             
             summary_parts = []
             if tendency_jobs:
-                summary_parts.append(f"사용자의 성향에 기반하여 '{tendency_jobs[0]['job_name']}'을 포함한 {len(tendency_jobs)}개의 직업이 추천됩니다.")
+                summary_parts.append(f"사용자의 성향에 기반하여 '{tendency_jobs[0]['job_name']}' 등 {len(tendency_jobs)}개의 직업이 추천됩니다.")
             if competency_jobs:
-                 summary_parts.append(f"보유한 역량을 바탕으로는 '{competency_jobs[0]['jo_name']}'을 포함한 {len(competency_jobs)}개의 직업이 적합합니다.")
+                 summary_parts.append(f"보유한 역량을 바탕으로는 '{competency_jobs[0]['jo_name']}' 등 {len(competency_jobs)}개의 직업이 적합합니다.")
+            if preference_jobs:
+                pref_name = preference_jobs[0]['preference_name']
+                summary_parts.append(f"'{pref_name}' 선호 유형에 따라 '{preference_jobs[0]['jo_name']}'을 포함한 직업들이 추천됩니다.")
             if duties:
                 summary_parts.append(f"추천되는 세부 직무로는 '{duties[0]['du_name']}' 등이 있습니다.")
 
-            summary_text = " ".join(summary_parts)
+            summary_text = " ".join(summary_parts) if summary_parts else "다양한 기준에 따른 직업 및 직무 정보가 분석되었습니다."
             
             metadata = {
-                "document_version": "1.2", "created_at": datetime.now().isoformat(),
-                "data_sources": ["careerRecommendationQuery", "competencyJobsQuery", "dutiesQuery"],
+                "document_version": "1.3", "created_at": datetime.now().isoformat(),
+                "data_sources": ["careerRecommendationQuery", "competencyJobsQuery", "preferenceJobsQuery", "dutiesQuery"],
                 "tendency_jobs_count": len(tendency_jobs),
                 "competency_jobs_count": len(competency_jobs),
+                "preference_jobs_count": len(preference_jobs),
                 "duties_count": len(duties)
             }
 
@@ -313,8 +324,38 @@ class DocumentTransformer:
             raise DocumentTransformationError(DocumentType.COMPETENCY_ANALYSIS, str(e))
     
     def _create_preference_analysis_document(self, query_results: Dict[str, List[Dict[str, Any]]]) -> TransformedDocument:
-        """Placeholder for preference analysis document"""
-        raise DocumentTransformationError(DocumentType.PREFERENCE_ANALYSIS, "Transformation not yet implemented.")
+        try:
+            stats = self._safe_get(query_results.get("imagePreferenceStatsQuery", []))
+            preferences = query_results.get("preferenceDataQuery", [])
+
+            if not preferences:
+                raise DocumentTransformationError(DocumentType.PREFERENCE_ANALYSIS, "preferenceDataQuery returned no data.")
+
+            content = {
+                "preference_test_stats": stats,
+                "top_preferences": preferences
+            }
+
+            top_pref_names = [p['preference_name'] for p in preferences]
+            summary_text = (
+                f"이미지 선호도 분석 결과, 사용자는 '{', '.join(top_pref_names)}' 유형에 가장 높은 선호도를 보입니다. "
+                f"가장 선호하는 유형인 '{top_pref_names[0]}'에 대한 설명: {preferences[0]['description']}"
+            )
+            
+            metadata = {
+                "document_version": "1.3", "created_at": datetime.now().isoformat(),
+                "data_sources": ["imagePreferenceStatsQuery", "preferenceDataQuery"],
+                "top_preference_name": top_pref_names[0]
+            }
+            
+            return TransformedDocument(
+                doc_type=DocumentType.PREFERENCE_ANALYSIS,
+                content=content, summary_text=summary_text, metadata=metadata
+            )
+            
+        except Exception as e:
+            logger.error(f"Error creating preference analysis document: {e}", exc_info=True)
+            raise DocumentTransformationError(DocumentType.PREFERENCE_ANALYSIS, str(e))
     
     async def transform_all_documents(
         self, 
