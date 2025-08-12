@@ -36,6 +36,7 @@ class DocumentTransformer:
     
     def __init__(self):
         self.transformation_methods = {
+            DocumentType.USER_PROFILE: self._create_user_profile_document, # <-- [6단계] 추가
             DocumentType.PERSONALITY_PROFILE: self._create_personality_profile,
             DocumentType.THINKING_SKILLS: self._create_thinking_skills_document,
             DocumentType.CAREER_RECOMMENDATIONS: self._create_career_recommendations_document,
@@ -62,6 +63,36 @@ class DocumentTransformer:
         elif percentile >= 25: return "개선 필요"
         else: return "많은 개선 필요"
     
+    # ▼▼▼ [6단계: 추가된 문서 생성 메소드] ▼▼▼
+    def _create_user_profile_document(self, query_results: Dict[str, List[Dict[str, Any]]]) -> TransformedDocument:
+        try:
+            personal_info = self._safe_get(query_results.get("personalInfoQuery", []))
+            if not personal_info or 'user_name' not in personal_info:
+                raise DocumentTransformationError(DocumentType.USER_PROFILE, "personalInfoQuery returned no data.")
+
+            content = {
+                "user_name": self._safe_get_value(personal_info, "user_name"),
+                "age": self._safe_get_value(personal_info, "age"),
+                "gender": self._safe_get_value(personal_info, "gender")
+            }
+            
+            summary_text = (
+                f"검사자는 {content['user_name']}님이며, 나이는 {content['age']}세, 성별은 {content['gender']}입니다."
+            )
+            
+            metadata = {
+                "document_version": "1.5", "created_at": datetime.now().isoformat(),
+                "data_sources": ["personalInfoQuery"],
+            }
+            
+            return TransformedDocument(
+                doc_type=DocumentType.USER_PROFILE,
+                content=content, summary_text=summary_text, metadata=metadata
+            )
+        except Exception as e:
+            logger.error(f"Error creating user profile document: {e}", exc_info=True)
+            raise DocumentTransformationError(DocumentType.USER_PROFILE, str(e))
+
     def _create_personality_profile(self, query_results: Dict[str, List[Dict[str, Any]]]) -> TransformedDocument:
         try:
             tendency_data = self._safe_get(query_results.get("tendencyQuery", []))
@@ -212,6 +243,7 @@ class DocumentTransformer:
         try:
             learning_style_results = query_results.get("learningStyleQuery", [])
             chart_results = query_results.get("learningStyleChartQuery", [])
+            subject_ranks = query_results.get("subjectRanksQuery", [])
 
             if not learning_style_results:
                 raise DocumentTransformationError(DocumentType.LEARNING_STYLE, "learningStyleQuery returned no data.")
@@ -227,28 +259,27 @@ class DocumentTransformer:
                     "study_tendency_description": self._safe_get_value(style_info, "tnd1_study_tendency", ""),
                     "study_way_description": self._safe_get_value(style_info, "tnd1_study_way", "")
                 },
-                "secondary_tendency_style": {
-                    "name": self._safe_get_value(style_info, "tnd2_name", ""),
-                    "study_tendency_description": self._safe_get_value(style_info, "tnd2_study_tendency", ""),
-                    "study_way_description": self._safe_get_value(style_info, "tnd2_study_way", "")
-                },
+                "recommended_subjects": subject_ranks,
                 "style_chart_data": style_chart_data,
                 "method_chart_data": method_chart_data,
-                "chart_coordinates": {
-                    "row": self._safe_get_value(style_info, "tnd_row"),
-                    "col": self._safe_get_value(style_info, "tnd_col")
-                }
             }
             
-            summary_text = (
-                f"사용자의 주요 학습 성향은 '{content['primary_tendency_style']['name']}'이며, 보조 학습 성향은 '{content['secondary_tendency_style']['name']}'입니다. "
-                f"주요 공부 성향에 대해 설명하자면, {content['primary_tendency_style']['study_tendency_description']} "
-                f"이를 바탕으로 추천하는 공부 방법은 {content['primary_tendency_style']['study_way_description']}"
-            )
+            summary_parts = [
+                f"주요 학습 성향은 '{content['primary_tendency_style']['name']}'입니다.",
+                f"추천 공부 방법은 {content['primary_tendency_style']['study_way_description']}"
+            ]
+            
+            # ▼▼▼ [수정] subject_ranks 데이터가 있을 때만 요약문에 추가하도록 변경 ▼▼▼
+            if subject_ranks and len(subject_ranks) > 1:
+                summary_parts.append(f"이러한 성향에 기반하여, '{subject_ranks[0]['subject_name']}' 및 '{subject_ranks[1]['subject_name']}' 과목에서 높은 성취도를 보일 가능성이 있습니다.")
+            elif subject_ranks:
+                 summary_parts.append(f"이러한 성향에 기반하여, '{subject_ranks[0]['subject_name']}' 과목에서 높은 성취도를 보일 가능성이 있습니다.")
+
+            summary_text = " ".join(summary_parts)
 
             metadata = {
-                "document_version": "1.2", "created_at": datetime.now().isoformat(),
-                "data_sources": ["learningStyleQuery", "learningStyleChartQuery"],
+                "document_version": "1.5", "created_at": datetime.now().isoformat(),
+                "data_sources": ["learningStyleQuery", "learningStyleChartQuery", "subjectRanksQuery"],
                 "primary_style_name": content['primary_tendency_style']['name']
             }
             
@@ -259,7 +290,6 @@ class DocumentTransformer:
         except Exception as e:
             logger.error(f"Error creating learning style document: {e}", exc_info=True)
             raise DocumentTransformationError(DocumentType.LEARNING_STYLE, str(e))
-
     def _create_competency_analysis_document(self, query_results: Dict[str, List[Dict[str, Any]]]) -> TransformedDocument:
         try:
             competencies = query_results.get("competencyAnalysisQuery", [])

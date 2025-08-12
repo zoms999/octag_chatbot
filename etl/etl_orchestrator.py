@@ -688,7 +688,8 @@ class ETLOrchestrator:
         query_executor = LegacyQueryExecutor(
             max_retries=2,
             retry_delay=1.0,
-            max_workers=4
+            max_workers=4,
+            query_timeout=300.0  # 5분으로 타임아웃 증가
         )
         
         try:

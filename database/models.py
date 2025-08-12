@@ -5,6 +5,7 @@ Defines database models for chat_users, chat_documents, chat_jobs, chat_majors, 
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any
+from enum import Enum
 from sqlalchemy import Column, String, Integer, DateTime, Text, ForeignKey, ARRAY
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship, Mapped, mapped_column
@@ -185,7 +186,8 @@ class ChatFeedback(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.current_timestamp())
 
 # Document type enumeration for validation
-class DocumentType:
+class DocumentType(str, Enum):
+    USER_PROFILE = "USER_PROFILE"
     PERSONALITY_PROFILE = "PERSONALITY_PROFILE"
     THINKING_SKILLS = "THINKING_SKILLS"
     CAREER_RECOMMENDATIONS = "CAREER_RECOMMENDATIONS"
@@ -195,18 +197,11 @@ class DocumentType:
     
     @classmethod
     def all_types(cls) -> List[str]:
-        return [
-            cls.PERSONALITY_PROFILE,
-            cls.THINKING_SKILLS,
-            cls.CAREER_RECOMMENDATIONS,
-            cls.LEARNING_STYLE,
-            cls.COMPETENCY_ANALYSIS,
-            cls.PREFERENCE_ANALYSIS
-        ]
+        return [item.value for item in cls]
     
     @classmethod
     def is_valid(cls, doc_type: str) -> bool:
-        return doc_type in cls.all_types()
+        return any(doc_type == item.value for item in cls)
 
 
 # Processing status enumeration

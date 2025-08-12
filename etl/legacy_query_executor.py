@@ -129,54 +129,70 @@ class AptitudeTestQueries:
         return self._run(sql, {"anp_seq": anp_seq})
 
     def _query_personality_detail(self, anp_seq: int) -> List[Dict[str, Any]]:
-        # 원본 #10 쿼리(detailedPersonalityAnalysisQuery) 기반
+        # 원본 #10 쿼리(detailedPersonalityAnalysisQuery) 기반 - 성능 최적화 버전
         sql = """
-        select qu.qu_explain as detail_description,
-               sc1.sc1_rank as rank,
+        WITH top_tendencies AS (
+            SELECT qua_code, sc1_rank 
+            FROM mwd_score1 
+            WHERE anp_seq = :anp_seq AND sc1_step = 'tnd' AND sc1_rank <= 3
+        )
+        SELECT qu.qu_explain as detail_description,
+               tt.sc1_rank as rank,
                an.an_wei as weight,
-               sc1.qua_code as code
-        from mwd_answer an, mwd_question qu,
-        (select qua_code, sc1_rank from mwd_score1 sc1
-         where anp_seq = :anp_seq and sc1_step='tnd' and sc1_rank <= 3) sc1
-        where an.anp_seq = :anp_seq
-        and qu.qu_code = an.qu_code and qu.qu_use = 'Y'
-        and qu.qu_qusyn = 'Y' and qu.qu_kind1 = 'tnd'
-        and an.an_wei >= 4 and qu.qu_kind2 = sc1.qua_code
-        order by sc1.sc1_rank, an.an_wei desc
+               tt.qua_code as code
+        FROM mwd_answer an
+        INNER JOIN mwd_question qu ON qu.qu_code = an.qu_code
+        INNER JOIN top_tendencies tt ON qu.qu_kind2 = tt.qua_code
+        WHERE an.anp_seq = :anp_seq
+          AND qu.qu_use = 'Y'
+          AND qu.qu_qusyn = 'Y' 
+          AND qu.qu_kind1 = 'tnd'
+          AND an.an_wei >= 4
+        ORDER BY tt.sc1_rank, an.an_wei DESC
+        LIMIT 50
         """
         return self._run(sql, {"anp_seq": anp_seq})
 
     def _query_strengths_weaknesses(self, anp_seq: int) -> List[Dict[str, Any]]:
-        # 강점/약점 데이터가 별도로 없으므로, 원본 #9 쿼리를 변형하여
-        # 가장 강하게 응답한 문항을 '강점'으로, 약하게 응답한 문항을 '약점'으로 간주
+        # 강점/약점 데이터 - 성능 최적화 버전
         sql = """
-        (
-            -- 강점: 상위 3개 성향 관련, 긍정적으로 높게 응답한 문항
-            select qu.qu_explain as description,
+        WITH tendency_ranks AS (
+            SELECT qua_code, sc1_rank,
+                   CASE WHEN sc1_rank <= 3 THEN 'top' ELSE 'bottom' END as rank_type
+            FROM mwd_score1 
+            WHERE anp_seq = :anp_seq AND sc1_step = 'tnd'
+        ),
+        strengths AS (
+            SELECT qu.qu_explain as description,
                    'strength' as type,
                    an.an_wei as weight
-            from mwd_answer an
-            join mwd_question qu on an.qu_code = qu.qu_code
-            join (select qua_code from mwd_score1 where anp_seq = :anp_seq and sc1_step = 'tnd' and sc1_rank <= 3) as top_tnd
-                 on qu.qu_kind2 = top_tnd.qua_code
-            where an.anp_seq = :anp_seq and qu.qu_kind1 = 'tnd' and an.an_wei >= 4
-            order by an.an_wei desc
-            limit 5
-        )
-        union all
-        (
-            -- 약점: 하위 3개 성향 관련, 부정적으로 높게 응답한 문항 (an_wei <= 2)
-            select qu.qu_explain as description,
+            FROM mwd_answer an
+            INNER JOIN mwd_question qu ON an.qu_code = qu.qu_code
+            INNER JOIN tendency_ranks tr ON qu.qu_kind2 = tr.qua_code
+            WHERE an.anp_seq = :anp_seq 
+              AND qu.qu_kind1 = 'tnd' 
+              AND an.an_wei >= 4
+              AND tr.rank_type = 'top'
+            ORDER BY an.an_wei DESC
+            LIMIT 5
+        ),
+        weaknesses AS (
+            SELECT qu.qu_explain as description,
                    'weakness' as type,
                    an.an_wei as weight
-            from mwd_answer an
-            join mwd_question qu on an.qu_code = qu.qu_code
-            join (select qua_code from mwd_score1 where anp_seq = :anp_seq and sc1_step = 'tnd' and sc1_rank > (select count(*) from mwd_score1 where anp_seq = :anp_seq and sc1_step='tnd') - 3) as bottom_tnd
-                 on qu.qu_kind2 = bottom_tnd.qua_code
-            where an.anp_seq = :anp_seq and qu.qu_kind1 = 'tnd' and an.an_wei <= 2
-            order by an.an_wei asc
-            limit 5
+            FROM mwd_answer an
+            INNER JOIN mwd_question qu ON an.qu_code = qu.qu_code
+            INNER JOIN tendency_ranks tr ON qu.qu_kind2 = tr.qua_code
+            WHERE an.anp_seq = :anp_seq 
+              AND qu.qu_kind1 = 'tnd' 
+              AND an.an_wei <= 2
+              AND tr.rank_type = 'bottom'
+            ORDER BY an.an_wei ASC
+            LIMIT 5
         )
+        SELECT * FROM strengths
+        UNION ALL
+        SELECT * FROM weaknesses
         """
         return self._run(sql, {"anp_seq": anp_seq})
         
@@ -423,6 +439,58 @@ class AptitudeTestQueries:
         """
         return self._run(sql, {"anp_seq": anp_seq})
 
+    # ▼▼▼ [6단계: 추가된 메소드 1] ▼▼▼
+    def _query_personal_info(self, anp_seq: int) -> List[Dict[str, Any]]:
+        # 원본 #3 쿼리(personalInfoQuery) 기반
+        sql = """
+        SELECT
+            pe.pe_name as user_name,
+            cast(extract(year from age(cast(
+                lpad(cast(pe_birth_year as text),4,'0') ||
+                lpad(cast(pe_birth_month as text),2,'0') ||
+                lpad(cast(pe_birth_day as text),2,'0') as date
+            ))) as int) as age,
+            case when pe.pe_sex = 'M' then '남성' else '여성' end as gender
+        FROM mwd_answer_progress ap
+        JOIN mwd_account ac ON ap.ac_gid = ac.ac_gid
+        JOIN mwd_person pe ON ac.pe_seq = pe.pe_seq
+        WHERE ap.anp_seq = :anp_seq
+        """
+        return self._run(sql, {"anp_seq": anp_seq})
+
+    # ▼▼▼ [6단계: 추가된 메소드 2] ▼▼▼
+    def _query_subject_ranks(self, anp_seq: int) -> List[Dict[str, Any]]:
+        # 원본 #32 쿼리(subjectRanksQuery) 기반
+        sql = """
+        SELECT
+            tsm_subject_group AS subject_group,
+            tsm_subject_choice AS subject_choice,
+            tsm_subject AS subject_name,
+            tsm_subject_explain AS subject_explain,
+            CAST(CASE rv.rv_tnd1
+              WHEN 'tnd11000' THEN sm.tsm_communication_type
+              WHEN 'tnd12000' THEN sm.tsm_creation_type
+              WHEN 'tnd13000' THEN sm.tsm_cooperative_type
+              WHEN 'tnd14000' THEN sm.tsm_human_understanding_type
+              WHEN 'tnd15000' THEN sm.tsm_artistic_type
+              WHEN 'tnd16000' THEN sm.tsm_rational_type
+              WHEN 'tnd17000' THEN sm.tsm_factual_type
+              WHEN 'tnd18000' THEN sm.tsm_logical_type
+              WHEN 'tnd19000' THEN sm.tsm_alternative_seeking_type
+              WHEN 'tnd20000' THEN sm.tsm_metacognitive_type
+              WHEN 'tnd21000' THEN sm.tsm_problem_solving_type
+              WHEN 'tnd22000' THEN sm.tsm_information_processing_type
+              WHEN 'tnd23000' THEN sm.tsm_resourceful_type
+              WHEN 'tnd24000' THEN sm.tsm_future_oriented_type
+              WHEN 'tnd25000' THEN sm.tsm_adventurous_type
+            END AS INT) as rank
+        FROM mwd_resval rv
+        JOIN mwd_tendency_subject_map sm ON sm.tsm_use = 'Y'
+        WHERE rv.anp_seq = :anp_seq
+        ORDER BY rank, sm.tsm_subject_code
+        """
+        return self._run(sql, {"anp_seq": anp_seq})
+
     def execute_all_queries(self, anp_seq: int) -> Dict[str, List[Dict[str, Any]]]:
         results: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -445,11 +513,11 @@ class AptitudeTestQueries:
         # --- 2단계 추가 쿼리 호출 ---
         try:
             results["learningStyleQuery"] = self._query_learning_style(anp_seq)
-        except Exception:
+        except Exception: 
             results["learningStyleQuery"] = []
         try:
             results["learningStyleChartQuery"] = self._query_learning_style_chart(anp_seq)
-        except Exception:
+        except Exception: 
             results["learningStyleChartQuery"] = []
 
         # ▼▼▼ [3단계: 추가된 쿼리 호출] ▼▼▼
@@ -477,6 +545,12 @@ class AptitudeTestQueries:
         except: results["tendencyStatsQuery"] = []
         try: results["thinkingSkillComparisonQuery"] = self._query_thinking_skill_comparison(anp_seq)
         except: results["thinkingSkillComparisonQuery"] = []
+
+        # ▼▼▼ [6단계: 추가된 쿼리 호출] ▼▼▼
+        try: results["personalInfoQuery"] = self._query_personal_info(anp_seq)
+        except: results["personalInfoQuery"] = []
+        try: results["subjectRanksQuery"] = self._query_subject_ranks(anp_seq)
+        except: results["subjectRanksQuery"] = []
 
 
        # [수정] remaining_keys 목록 업데이트
@@ -525,6 +599,9 @@ class LegacyQueryExecutor:
             # ▼▼▼ [5단계: 추가된 쿼리 유효성 검사기] ▼▼▼
             "tendencyStatsQuery": self._validate_tendency_stats_query,
             "thinkingSkillComparisonQuery": self._validate_thinking_skill_comparison_query,
+            # ▼▼▼ [6단계: 추가된 쿼리 유효성 검사기] ▼▼▼
+            "personalInfoQuery": self._validate_personal_info_query,
+            "subjectRanksQuery": self._validate_subject_ranks_query,
         }
     
     def _validate_tendency_query(self, data: List[Dict[str, Any]]) -> bool:
@@ -805,6 +882,27 @@ class LegacyQueryExecutor:
             if not isinstance(row.get("my_score"), int) or not isinstance(row.get("average_score"), int): return False
         return True
 
+    # ▼▼▼ [6단계: 추가된 유효성 검사 메소드] ▼▼▼
+    def _validate_personal_info_query(self, data: List[Dict[str, Any]]) -> bool:
+        """Validate personal info query results."""
+        if not data or len(data) != 1: return False
+        
+        required_fields = ["user_name", "age", "gender"]
+        for field in required_fields:
+            if field not in data[0]: return False
+        return True
+
+    def _validate_subject_ranks_query(self, data: List[Dict[str, Any]]) -> bool:
+        """Validate subject ranks query results."""
+        if data is None: return False
+        if not data: return True
+        
+        required_fields = ["subject_group", "subject_choice", "subject_name", "subject_explain", "rank"]
+        for row in data:
+            for field in required_fields:
+                if field not in row: return False
+        return True
+
     def _validate_query_result(self, query_name: str, data: List[Dict[str, Any]]) -> bool:
         """Validate query result using appropriate validator"""
         validator = self.query_validators.get(query_name)
@@ -941,8 +1039,9 @@ class LegacyQueryExecutor:
         Execute all queries asynchronously with error handling and retry logic
         """
         
-        query_names = [
-            # --- 2단계까지 구현된 쿼리 ---
+        # 실제로 구현된 쿼리만 실행 (성능 최적화)
+        implemented_queries = [
+            # --- 기본 구현된 쿼리 ---
             "tendencyQuery",
             "topTendencyQuery", 
             "thinkingSkillsQuery",
@@ -969,36 +1068,25 @@ class LegacyQueryExecutor:
             "tendencyStatsQuery",
             "thinkingSkillComparisonQuery",
 
-            # --- 향후 추가될 쿼리 (자리 표시) ---
-            "jobMatchingQuery",
-            "majorRecommendationQuery",
-            "studyMethodQuery",
-            "socialSkillsQuery",
-            "leadershipQuery",
-            "communicationQuery",
-            "problemSolvingQuery",
-            "creativityQuery",
-            "analyticalThinkingQuery",
-            "practicalThinkingQuery",
-            "abstractThinkingQuery",
-            "memoryQuery",
-            "attentionQuery",
-            "processingSpeedQuery",
-            "spatialAbilityQuery",
-            "verbalAbilityQuery",
-            "numericalAbilityQuery",
-            "reasoningQuery",
-            "perceptionQuery",
-            "motivationQuery",
-            "interestQuery",
-            "valueQuery",
-            "workStyleQuery",
-            "environmentPreferenceQuery",
-            "teamworkQuery",
-            "independenceQuery",
-            "stabilityQuery",
-            "challengeQuery"
+            # --- 6단계 신규 쿼리 ---
+            "personalInfoQuery",
+            "subjectRanksQuery",
         ]
+        
+        # 구현되지 않은 쿼리들은 빈 배열로 즉시 설정
+        unimplemented_queries = [
+            "jobMatchingQuery", "majorRecommendationQuery", "studyMethodQuery",
+            "socialSkillsQuery", "leadershipQuery", "communicationQuery", 
+            "problemSolvingQuery", "creativityQuery", "analyticalThinkingQuery",
+            "practicalThinkingQuery", "abstractThinkingQuery", "memoryQuery",
+            "attentionQuery", "processingSpeedQuery", "spatialAbilityQuery",
+            "verbalAbilityQuery", "numericalAbilityQuery", "reasoningQuery",
+            "perceptionQuery", "motivationQuery", "interestQuery", "valueQuery",
+            "workStyleQuery", "environmentPreferenceQuery", "teamworkQuery",
+            "independenceQuery", "stabilityQuery", "challengeQuery"
+        ]
+        
+        query_names = implemented_queries
         
         logger.info(f"Starting execution of {len(query_names)} queries for anp_seq: {anp_seq}")
         
@@ -1054,6 +1142,22 @@ class LegacyQueryExecutor:
             else:
                 logger.warning(f"Excluding failed query '{query_name}' from results")
         
+        # 구현되지 않은 쿼리들을 빈 배열로 추가 (DocumentTransformer 호환성)
+        unimplemented_queries = [
+            "jobMatchingQuery", "majorRecommendationQuery", "studyMethodQuery",
+            "socialSkillsQuery", "leadershipQuery", "communicationQuery", 
+            "problemSolvingQuery", "creativityQuery", "analyticalThinkingQuery",
+            "practicalThinkingQuery", "abstractThinkingQuery", "memoryQuery",
+            "attentionQuery", "processingSpeedQuery", "spatialAbilityQuery",
+            "verbalAbilityQuery", "numericalAbilityQuery", "reasoningQuery",
+            "perceptionQuery", "motivationQuery", "interestQuery", "valueQuery",
+            "workStyleQuery", "environmentPreferenceQuery", "teamworkQuery",
+            "independenceQuery", "stabilityQuery", "challengeQuery"
+        ]
+        
+        for query_name in unimplemented_queries:
+            successful_results[query_name] = []
+        
         return successful_results
     
     async def close(self):
@@ -1061,3 +1165,31 @@ class LegacyQueryExecutor:
         if self.executor:
             self.executor.shutdown(wait=True)
             logger.info("LegacyQueryExecutor resources cleaned up")
+
+if __name__ == '__main__':
+    # Example usage
+    async def main():
+        logging.basicConfig(level=logging.INFO)
+        
+        # This is a placeholder for a real SQLAlchemy session
+        mock_session = None
+        anp_seq_to_test = 12345  # Replace with a valid anp_seq for testing
+        
+        executor = LegacyQueryExecutor()
+        
+        try:
+            all_results = await executor.execute_all_queries_async(mock_session, anp_seq_to_test)
+            
+            for name, result in all_results.items():
+                if result.success:
+                    print(f"✅ Query '{name}' succeeded in {result.execution_time:.2f}s ({result.row_count} rows)")
+                else:
+                    print(f"❌ Query '{name}' failed: {result.error}")
+            
+            successful_data = await executor.get_successful_results(all_results)
+            print(f"\nTotal successful queries with data: {len(successful_data)}")
+            
+        finally:
+            await executor.close()
+
+    asyncio.run(main())
