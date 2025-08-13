@@ -38,7 +38,7 @@ class TokenManager {
       sessionStorage.setItem('access_token', tokens.access);
       // Store refresh token in localStorage for persistence
       localStorage.setItem('refresh_token', tokens.refresh);
-      
+
       // Store token timestamp for expiration tracking
       localStorage.setItem('token_timestamp', Date.now().toString());
     }
@@ -179,7 +179,7 @@ export const useAuthStore = create<AuthState>()(
       // Refresh token action
       refreshToken: async () => {
         const state = get();
-        
+
         // Prevent multiple simultaneous refresh attempts
         if (state.isRefreshing) {
           return;
@@ -202,7 +202,7 @@ export const useAuthStore = create<AuthState>()(
           };
 
           TokenManager.setTokens(newTokens);
-          set({ 
+          set({
             tokens: newTokens,
             isRefreshing: false,
             error: null,
@@ -294,7 +294,7 @@ export const useAuthStore = create<AuthState>()(
       // Start token refresh timer
       startTokenRefreshTimer: () => {
         const state = get();
-        
+
         // Clear existing timer
         if (state.refreshTimer) {
           clearTimeout(state.refreshTimer);
@@ -321,7 +321,7 @@ export const useAuthStore = create<AuthState>()(
       // Schedule token refresh based on token expiration
       scheduleTokenRefresh: () => {
         const state = get();
-        
+
         // Clear existing timer
         if (state.refreshTimer) {
           clearTimeout(state.refreshTimer);
@@ -339,33 +339,39 @@ export const useAuthStore = create<AuthState>()(
           const payload = JSON.parse(atob(token.split('.')[1]));
           const currentTime = Math.floor(Date.now() / 1000);
           const expirationTime = payload.exp;
-          
+
           // Refresh 5 minutes before expiration
           const refreshTime = (expirationTime - currentTime - 300) * 1000;
-          
+
           // If token expires in less than 5 minutes, refresh immediately
           if (refreshTime <= 0) {
-            get().refreshToken().catch(() => {
-              // If refresh fails, logout
-              get().logout();
-            });
+            get()
+              .refreshToken()
+              .catch(() => {
+                // If refresh fails, logout
+                get().logout();
+              });
             return;
           }
 
           // Schedule refresh
           const timer = setTimeout(() => {
-            get().refreshToken().catch(() => {
-              get().logout();
-            });
+            get()
+              .refreshToken()
+              .catch(() => {
+                get().logout();
+              });
           }, refreshTime);
 
           set({ refreshTimer: timer });
         } catch (error) {
           console.error('Error scheduling token refresh:', error);
           // If we can't parse the token, try to refresh it
-          get().refreshToken().catch(() => {
-            get().logout();
-          });
+          get()
+            .refreshToken()
+            .catch(() => {
+              get().logout();
+            });
         }
       },
     }),

@@ -23,14 +23,9 @@ export function useRouteGuard(options: RouteGuardOptions = {}) {
 
   const router = useRouter();
   const pathname = usePathname();
-  const { 
-    user, 
-    isAuthenticated, 
-    isLoading, 
-    isRefreshing, 
-    checkAuth 
-  } = useAuthStore();
-  
+  const { user, isAuthenticated, isLoading, isRefreshing, checkAuth } =
+    useAuthStore();
+
   const [isInitialized, setIsInitialized] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
 
@@ -105,7 +100,9 @@ export function useRouteGuard(options: RouteGuardOptions = {}) {
 /**
  * Hook for protecting authenticated routes
  */
-export function useProtectedRoute(options?: Omit<RouteGuardOptions, 'requireAuth'>) {
+export function useProtectedRoute(
+  options?: Omit<RouteGuardOptions, 'requireAuth'>
+) {
   return useRouteGuard({
     ...options,
     requireAuth: true,

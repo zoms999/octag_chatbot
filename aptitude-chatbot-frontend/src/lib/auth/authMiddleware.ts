@@ -13,7 +13,7 @@ export class AuthMiddleware {
    */
   static async getValidToken(): Promise<string | null> {
     const accessToken = TokenManager.getAccessToken();
-    
+
     if (!accessToken) {
       return null;
     }
@@ -91,9 +91,11 @@ export class AuthMiddleware {
   /**
    * Add authorization header to request config
    */
-  static async addAuthHeader(headers: Record<string, string> = {}): Promise<Record<string, string>> {
+  static async addAuthHeader(
+    headers: Record<string, string> = {}
+  ): Promise<Record<string, string>> {
     const token = await this.getValidToken();
-    
+
     if (token) {
       return {
         ...headers,
@@ -107,9 +109,12 @@ export class AuthMiddleware {
   /**
    * Check if request should include auth header
    */
-  static shouldIncludeAuth(url: string, options: { requiresAuth?: boolean } = {}): boolean {
+  static shouldIncludeAuth(
+    url: string,
+    options: { requiresAuth?: boolean } = {}
+  ): boolean {
     const { requiresAuth = true } = options;
-    
+
     // Don't include auth for login/refresh endpoints
     if (url.includes('/auth/login') || url.includes('/auth/refresh')) {
       return false;
@@ -125,12 +130,12 @@ export class AuthMiddleware {
     if (status === 401) {
       // Clear tokens on 401 errors
       TokenManager.clearTokens();
-      
+
       // Redirect to login if in browser
       if (typeof window !== 'undefined') {
         window.location.href = '/login';
       }
-      
+
       return true; // Indicates auth error was handled
     }
 
@@ -167,7 +172,7 @@ export class AuthMiddleware {
     options: RequestInit & { requiresAuth?: boolean } = {}
   ): Promise<Response> {
     const requestOptions = await this.prepareRequest(url, options);
-    
+
     const response = await fetch(url, requestOptions);
 
     // Handle auth errors

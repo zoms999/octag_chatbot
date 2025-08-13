@@ -7,13 +7,13 @@ import { shouldRefreshToken, isTokenExpired } from '../lib/auth/tokenRefresh';
  * Hook for automatic token refresh management
  */
 export function useTokenRefresh() {
-  const { 
-    isAuthenticated, 
-    isRefreshing, 
-    refreshToken, 
+  const {
+    isAuthenticated,
+    isRefreshing,
+    refreshToken,
     logout,
     startTokenRefreshTimer,
-    stopTokenRefreshTimer 
+    stopTokenRefreshTimer,
   } = useAuthStore();
 
   const checkAndRefreshToken = useCallback(async () => {

@@ -6,10 +6,10 @@ export class AuthService {
    * Login with credentials
    */
   static async login(credentials: LoginCredentials): Promise<AuthResponse> {
-    const response = await apiClient.post<AuthResponse>('/auth/login', {
+    const response = await apiClient.post<AuthResponse>('/api/auth/login', {
       username: credentials.username,
       password: credentials.password,
-      login_type: credentials.loginType,
+      loginType: credentials.loginType,
     });
 
     if (!response.success || !response.data) {
@@ -28,7 +28,7 @@ export class AuthService {
     const response = await apiClient.post<{
       access_token: string;
       refresh_token?: string;
-    }>('/auth/refresh', {
+    }>('/api/auth/refresh', {
       refresh_token: refreshToken,
     });
 
@@ -43,7 +43,7 @@ export class AuthService {
    * Get current user info
    */
   static async getCurrentUser(): Promise<User> {
-    const response = await apiClient.get<User>('/auth/me');
+    const response = await apiClient.get<User>('/api/auth/me');
 
     if (!response.success || !response.data) {
       throw new Error(response.message || 'Failed to get user info');
@@ -57,7 +57,7 @@ export class AuthService {
    */
   static async logout(): Promise<void> {
     try {
-      await apiClient.post('/auth/logout');
+      await apiClient.post('/api/auth/logout');
     } catch (error) {
       // Ignore logout errors - we'll clear tokens anyway
       console.warn('Logout request failed:', error);

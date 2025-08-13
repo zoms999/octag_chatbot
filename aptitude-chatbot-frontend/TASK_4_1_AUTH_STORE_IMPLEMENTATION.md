@@ -1,192 +1,251 @@
-# Task 4.1 - 인증 스토어 및 토큰 관리 구현 완료
+# Task 4.1: 인증 스토어 및 토큰 관리 구현 - Implementation Summary
 
-## 구현 개요
+## Overview
 
-Task 4.1에서 요구된 Zustand 기반 AuthStore와 JWT 토큰 관리, 자동 토큰 갱신, 보호된 라우트 기능을 완전히 구현했습니다.
+Successfully implemented a comprehensive authentication store and token management system using Zustand with the following key features:
 
-## 구현된 기능
+## ✅ Completed Features
 
-### 1. 향상된 AuthStore (Zustand)
+### 1. Zustand 기반 AuthStore 구현
 
-**파일**: `src/lib/stores/auth.ts`
+- **Location**: `src/lib/stores/auth.ts`
+- **Features**:
+  - Complete authentication state management
+  - User data persistence with Zustand persist middleware
+  - Secure token storage separation (access in sessionStorage, refresh in localStorage)
+  - Loading states and error handling
+  - Automatic token refresh scheduling
 
-#### 새로운 상태 필드
-- `isRefreshing`: 토큰 갱신 중 상태 추적
-- `refreshTimer`: 자동 토큰 갱신 타이머 관리
+### 2. JWT 토큰 저장 및 관리 로직 구현
 
-#### 핵심 기능
-- **자동 토큰 갱신 스케줄링**: 토큰 만료 5분 전 자동 갱신
-- **중복 갱신 방지**: 동시 갱신 요청 방지 로직
-- **토큰 유효성 검사**: 로그인/인증 확인 시 토큰 상태 검증
-- **타이머 관리**: 로그인/로그아웃 시 자동 타이머 시작/중지
+- **TokenManager Class**: Secure token storage and retrieval
+  - Access tokens stored in sessionStorage (cleared on browser close)
+  - Refresh tokens stored in localStorage (persistent across sessions)
+  - Token timestamp tracking for expiration management
+  - Secure token validation and cleanup methods
 
-### 2. 강화된 TokenManager
+### 3. 자동 토큰 갱신 기능 구현
 
-#### 새로운 메서드
-- `getTokenTimestamp()`: 토큰 저장 시간 추적
-- `isTokenValid()`: 토큰 유효성 실시간 검사
-- `shouldRefresh()`: 토큰 갱신 필요 여부 판단
+- **Automatic Refresh Logic**:
+  - Proactive token refresh 5 minutes before expiration
+  - Deduplication to prevent multiple simultaneous refresh attempts
+  - Automatic retry and fallback to logout on refresh failure
+  - Timer-based scheduling with proper cleanup
 
-#### 보안 강화
-- 액세스 토큰: sessionStorage (XSS 방지)
-- 리프레시 토큰: localStorage (지속성)
-- 토큰 타임스탬프 추적
+### 4. 인증 상태 확인 및 보호된 라우트 구현
 
-### 3. 자동 토큰 갱신 시스템
+- **Authentication Hooks**:
+  - `useAuth`: Basic authentication state management
+  - `useRouteGuard`: Comprehensive route protection with role-based access
+  - `useTokenRefresh`: Automatic token refresh management
+  - `useProtectedRoute`, `usePublicRoute`: Convenience hooks for common patterns
 
-**파일**: `src/hooks/useTokenRefresh.ts`
+- **Route Protection Components**:
+  - `ProtectedRoute`: Protects authenticated routes
+  - `PublicRoute`: Redirects authenticated users from public pages
+  - `AuthProvider`: Initializes authentication state
+  - `EnhancedAuthProvider`: Advanced provider with periodic checks and visibility handling
 
-#### 기능
-- **주기적 토큰 검사**: 1분마다 토큰 상태 확인
-- **페이지 가시성 기반 갱신**: 페이지 활성화 시 토큰 검사
-- **만료 임박 감지**: 5분 전 자동 갱신 트리거
-- **실패 시 자동 로그아웃**: 갱신 실패 시 안전한 로그아웃
+## 🔧 Technical Implementation Details
 
-### 4. 포괄적인 라우트 보호
+### Authentication Store Structure
 
-**파일**: `src/hooks/useRouteGuard.ts`
-
-#### 제공되는 훅
-- `useRouteGuard`: 기본 라우트 보호 로직
-- `useProtectedRoute`: 인증 필요 라우트용
-- `usePublicRoute`: 공개 라우트용 (인증된 사용자 리다이렉트)
-- `useRoleBasedRoute`: 역할 기반 접근 제어
-
-#### 기능
-- **역할 기반 접근 제어**: 사용자 타입별 라우트 제한
-- **리다이렉트 URL 저장**: 로그인 후 원래 페이지로 복귀
-- **인증 상태 실시간 추적**: 토큰 갱신 중 로딩 상태 관리
-
-### 5. 인증 유틸리티
-
-**파일**: `src/lib/auth/authUtils.ts`
-
-#### 제공 기능
-- 토큰 만료 시간 계산 및 포맷팅
-- 사용자 역할/ID 토큰에서 추출
-- 역할 기반 권한 검사
-- 인증 데이터 관리 (리다이렉트 URL 등)
-- 마지막 인증 확인 시간 추적
-
-### 6. API 인증 미들웨어
-
-**파일**: `src/lib/auth/authMiddleware.ts`
-
-#### 기능
-- **자동 토큰 첨부**: API 요청에 유효한 토큰 자동 추가
-- **백그라운드 갱신**: 필요 시 백그라운드에서 토큰 갱신
-- **에러 처리**: 401 에러 시 자동 로그아웃 및 리다이렉트
-- **요청 전처리**: 인증이 필요한 요청 자동 감지
-
-### 7. 테스트 코드
-
-**파일**: `src/lib/stores/__tests__/auth.test.ts`
-
-#### 테스트 범위
-- TokenManager 기본 동작
-- 로그인/로그아웃 플로우
-- 토큰 갱신 로직 (중복 방지 포함)
-- 인증 상태 확인
-- 타이머 관리
-
-## 보안 강화 사항
-
-### 1. 토큰 저장 전략
-- **액세스 토큰**: sessionStorage (브라우저 종료 시 삭제)
-- **리프레시 토큰**: localStorage (지속성 유지)
-- **토큰 타임스탬프**: 만료 추적용
-
-### 2. 자동 갱신 보안
-- 만료 5분 전 자동 갱신으로 서비스 중단 방지
-- 중복 갱신 요청 방지로 서버 부하 감소
-- 갱신 실패 시 즉시 로그아웃으로 보안 유지
-
-### 3. 라우트 보호
-- 인증 상태 실시간 검증
-- 토큰 갱신 중 적절한 로딩 상태 표시
-- 권한 없는 접근 시 안전한 리다이렉트
-
-## 사용 방법
-
-### 1. 기본 인증 확인
 ```typescript
-import { useAuthStore } from '@/lib/stores/auth';
+interface AuthState {
+  // State
+  user: User | null;
+  tokens: AuthTokens | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
+  isRefreshing: boolean;
+  refreshTimer: NodeJS.Timeout | null;
+
+  // Actions
+  login: (credentials: LoginCredentials) => Promise<void>;
+  logout: () => void;
+  refreshToken: () => Promise<void>;
+  checkAuth: () => Promise<void>;
+  clearError: () => void;
+  setTokens: (tokens: AuthTokens) => void;
+  setUser: (user: User) => void;
+  startTokenRefreshTimer: () => void;
+  stopTokenRefreshTimer: () => void;
+  scheduleTokenRefresh: () => void;
+}
+```
+
+### Token Security Features
+
+- **Secure Storage**: Access tokens in sessionStorage, refresh tokens in localStorage
+- **Automatic Cleanup**: Tokens cleared on logout or auth failure
+- **Expiration Handling**: JWT payload parsing for accurate expiration tracking
+- **Refresh Deduplication**: Prevents multiple simultaneous refresh attempts
+
+### API Integration
+
+- **AuthService**: Clean API interface for authentication operations
+- **AuthMiddleware**: Automatic token injection and refresh for API requests
+- **Error Handling**: Comprehensive error types and user-friendly messages
+
+## 🧪 Testing
+
+- **Comprehensive Test Suite**: 12 passing tests covering all major functionality
+- **Test Coverage**:
+  - TokenManager operations
+  - Login/logout flows
+  - Token refresh logic
+  - Authentication state management
+  - Timer management
+  - Error handling scenarios
+
+### Test Results
+
+```
+✓ AuthStore > TokenManager > should store and retrieve tokens correctly
+✓ AuthStore > TokenManager > should clear tokens correctly
+✓ AuthStore > TokenManager > should return null when no tokens exist
+✓ AuthStore > login > should login successfully and start token refresh timer
+✓ AuthStore > login > should handle login failure
+✓ AuthStore > logout > should logout and clear all data
+✓ AuthStore > refreshToken > should refresh token successfully
+✓ AuthStore > refreshToken > should handle refresh failure and logout
+✓ AuthStore > refreshToken > should prevent multiple simultaneous refresh attempts
+✓ AuthStore > checkAuth > should check auth successfully with valid tokens
+✓ AuthStore > checkAuth > should handle no tokens
+✓ AuthStore > token refresh timer > should start and stop token refresh timer
+
+Test Files: 1 passed (1)
+Tests: 12 passed (12)
+```
+
+## 🔐 Security Features
+
+### Token Management Security
+
+- **Separation of Concerns**: Access and refresh tokens stored separately
+- **Automatic Expiration**: Proactive refresh before token expiration
+- **Secure Cleanup**: All tokens cleared on authentication failure
+- **XSS Protection**: Access tokens not persisted in localStorage
+
+### Authentication Flow Security
+
+- **Automatic Logout**: On token refresh failure or expiration
+- **Route Protection**: Comprehensive route guarding with role-based access
+- **Error Handling**: Secure error messages without sensitive information exposure
+
+## 📁 File Structure
+
+```
+src/
+├── lib/
+│   ├── stores/
+│   │   ├── auth.ts                 # Main Zustand auth store
+│   │   └── __tests__/
+│   │       └── auth.test.ts        # Comprehensive test suite
+│   └── auth/
+│       ├── authService.ts          # API service layer
+│       ├── authMiddleware.ts       # Request middleware
+│       ├── authUtils.ts            # Utility functions
+│       ├── tokenRefresh.ts         # Token validation utilities
+│       └── index.ts                # Exports
+├── hooks/
+│   ├── useAuth.ts                  # Basic auth hook
+│   ├── useRouteGuard.ts            # Route protection hook
+│   └── useTokenRefresh.ts          # Token refresh hook
+├── components/
+│   └── auth/
+│       ├── AuthProvider.tsx        # Basic auth provider
+│       ├── ProtectedRoute.tsx      # Route protection components
+│       ├── EnhancedAuthProvider.tsx # Advanced auth provider
+│       └── index.ts                # Exports
+└── types/
+    ├── user.ts                     # User and auth types
+    └── api.ts                      # API response types
+```
+
+## 🎯 Requirements Fulfilled
+
+### ✅ Requirement 1.2: JWT Token Management
+
+- Secure token storage with separation of access/refresh tokens
+- Automatic token validation and refresh
+- Proper token cleanup on logout
+
+### ✅ Requirement 1.4: Automatic Token Refresh
+
+- Proactive refresh 5 minutes before expiration
+- Background refresh without user interruption
+- Fallback to logout on refresh failure
+
+### ✅ Requirement 1.5: Authentication State Management
+
+- Persistent authentication state across page reloads
+- Real-time authentication status updates
+- Comprehensive error handling and recovery
+
+### ✅ Requirement 7.5: Security Best Practices
+
+- Secure token storage patterns
+- XSS and CSRF protection considerations
+- Environment variable usage for sensitive configuration
+- Input validation and sanitization
+
+## 🚀 Usage Examples
+
+### Basic Authentication Check
+
+```typescript
+import { useAuth } from '@/hooks/useAuth';
 
 function MyComponent() {
-  const { isAuthenticated, user, isLoading } = useAuthStore();
-  
+  const { user, isAuthenticated, isLoading } = useAuth();
+
   if (isLoading) return <div>Loading...</div>;
   if (!isAuthenticated) return <div>Please login</div>;
-  
+
   return <div>Welcome, {user?.name}!</div>;
 }
 ```
 
-### 2. 보호된 라우트
-```typescript
-import { useProtectedRoute } from '@/hooks';
+### Protected Route
 
-function ProtectedPage() {
-  const { isLoading, isAuthorized } = useProtectedRoute();
-  
-  if (isLoading) return <div>Checking access...</div>;
-  if (!isAuthorized) return null; // Will redirect
-  
-  return <div>Protected content</div>;
+```typescript
+import { ProtectedRoute } from '@/components/auth';
+
+function Dashboard() {
+  return (
+    <ProtectedRoute>
+      <div>Protected dashboard content</div>
+    </ProtectedRoute>
+  );
 }
 ```
 
-### 3. 역할 기반 접근
-```typescript
-import { useRoleBasedRoute } from '@/hooks';
+### Role-Based Access
 
-function AdminPage() {
+```typescript
+import { useRoleBasedRoute } from '@/hooks/useRouteGuard';
+
+function AdminPanel() {
   const { isLoading, isAuthorized } = useRoleBasedRoute(['organization_admin']);
-  
-  if (isLoading) return <div>Loading...</div>;
+
+  if (isLoading) return <div>Checking permissions...</div>;
   if (!isAuthorized) return <div>Access denied</div>;
-  
-  return <div>Admin content</div>;
+
+  return <div>Admin panel content</div>;
 }
 ```
 
-### 4. 자동 토큰 갱신 활성화
-```typescript
-import { useTokenRefresh } from '@/hooks';
+## ✅ Task Completion Status
 
-function App() {
-  useTokenRefresh(); // 자동 토큰 관리 활성화
-  
-  return <div>App content</div>;
-}
-```
+**Status**: ✅ COMPLETED
 
-## 요구사항 충족 확인
+All sub-tasks have been successfully implemented:
 
-### ✅ Requirements 1.2 - JWT 토큰 인증
-- 액세스/리프레시 토큰 완전 구현
-- 토큰 기반 인증 상태 관리
+- ✅ Zustand 기반 AuthStore 구현
+- ✅ JWT 토큰 저장 및 관리 로직 구현
+- ✅ 자동 토큰 갱신 기능 구현
+- ✅ 인증 상태 확인 및 보호된 라우트 구현
 
-### ✅ Requirements 1.4 - 자동 토큰 갱신
-- 만료 전 자동 갱신 시스템
-- 백그라운드 갱신 지원
-
-### ✅ Requirements 1.5 - 토큰 만료 처리
-- 만료된 토큰 자동 감지
-- 갱신 실패 시 로그아웃
-
-### ✅ Requirements 7.5 - 보안 토큰 저장
-- sessionStorage/localStorage 분리 저장
-- XSS 공격 방지 고려
-
-## 다음 단계
-
-Task 4.1이 완료되었습니다. 다음 Task 4.2 (로그인 페이지 및 폼 구현)를 진행할 수 있습니다.
-
-구현된 인증 시스템은 다음 기능들을 제공합니다:
-- 완전한 JWT 토큰 관리
-- 자동 토큰 갱신
-- 포괄적인 라우트 보호
-- 역할 기반 접근 제어
-- 보안 강화된 토큰 저장
-- 포괄적인 테스트 커버리지
+The authentication system is now ready for integration with the login forms and dashboard components in subsequent tasks.

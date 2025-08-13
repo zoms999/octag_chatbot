@@ -1,5 +1,9 @@
 import { TokenManager } from '../stores/auth';
-import { isTokenExpired, shouldRefreshToken, getTokenExpiration } from './tokenRefresh';
+import {
+  isTokenExpired,
+  shouldRefreshToken,
+  getTokenExpiration,
+} from './tokenRefresh';
 
 /**
  * Utility functions for authentication management
@@ -144,7 +148,7 @@ export class AuthUtils {
    */
   static clearAuthData(): void {
     TokenManager.clearTokens();
-    
+
     // Clear any auth-related session storage
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem('redirectAfterLogin');

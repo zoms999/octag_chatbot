@@ -5,3 +5,4 @@ export {
   getTokenExpiration,
 } from './tokenRefresh';
 export { AuthUtils } from './authUtils';
+export { AuthMiddleware } from './authMiddleware';

@@ -39,7 +39,7 @@ describe('AuthStore', () => {
   beforeEach(() => {
     // Reset all mocks
     vi.clearAllMocks();
-    
+
     // Reset store state
     useAuthStore.setState({
       user: null,
@@ -69,17 +69,30 @@ describe('AuthStore', () => {
 
       TokenManager.setTokens(tokens);
 
-      expect(mockSessionStorage.setItem).toHaveBeenCalledWith('access_token', 'access-token');
-      expect(mockLocalStorage.setItem).toHaveBeenCalledWith('refresh_token', 'refresh-token');
-      expect(mockLocalStorage.setItem).toHaveBeenCalledWith('token_timestamp', expect.any(String));
+      expect(mockSessionStorage.setItem).toHaveBeenCalledWith(
+        'access_token',
+        'access-token'
+      );
+      expect(mockLocalStorage.setItem).toHaveBeenCalledWith(
+        'refresh_token',
+        'refresh-token'
+      );
+      expect(mockLocalStorage.setItem).toHaveBeenCalledWith(
+        'token_timestamp',
+        expect.any(String)
+      );
     });
 
     it('should clear tokens correctly', () => {
       TokenManager.clearTokens();
 
-      expect(mockSessionStorage.removeItem).toHaveBeenCalledWith('access_token');
+      expect(mockSessionStorage.removeItem).toHaveBeenCalledWith(
+        'access_token'
+      );
       expect(mockLocalStorage.removeItem).toHaveBeenCalledWith('refresh_token');
-      expect(mockLocalStorage.removeItem).toHaveBeenCalledWith('token_timestamp');
+      expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(
+        'token_timestamp'
+      );
     });
 
     it('should return null when no tokens exist', () => {
@@ -126,7 +139,9 @@ describe('AuthStore', () => {
         loginType: 'personal' as const,
       };
 
-      await expect(useAuthStore.getState().login(credentials)).rejects.toThrow('Login failed');
+      await expect(useAuthStore.getState().login(credentials)).rejects.toThrow(
+        'Login failed'
+      );
 
       const state = useAuthStore.getState();
       expect(state.user).toBeNull();
@@ -168,7 +183,9 @@ describe('AuthStore', () => {
       };
 
       mockLocalStorage.getItem.mockReturnValue('old-refresh-token');
-      vi.mocked(AuthService.refreshToken).mockResolvedValue(mockRefreshResponse);
+      vi.mocked(AuthService.refreshToken).mockResolvedValue(
+        mockRefreshResponse
+      );
 
       await useAuthStore.getState().refreshToken();
 
@@ -187,16 +204,20 @@ describe('AuthStore', () => {
       vi.mocked(AuthService.refreshToken).mockRejectedValue(mockError);
 
       // Mock logout to avoid actual redirect
-      const logoutSpy = vi.spyOn(useAuthStore.getState(), 'logout').mockImplementation(async () => {
-        useAuthStore.setState({
-          user: null,
-          tokens: null,
-          isAuthenticated: false,
-          isRefreshing: false,
+      const logoutSpy = vi
+        .spyOn(useAuthStore.getState(), 'logout')
+        .mockImplementation(async () => {
+          useAuthStore.setState({
+            user: null,
+            tokens: null,
+            isAuthenticated: false,
+            isRefreshing: false,
+          });
         });
-      });
 
-      await expect(useAuthStore.getState().refreshToken()).rejects.toThrow('Refresh failed');
+      await expect(useAuthStore.getState().refreshToken()).rejects.toThrow(
+        'Refresh failed'
+      );
 
       expect(logoutSpy).toHaveBeenCalled();
     });
@@ -204,12 +225,22 @@ describe('AuthStore', () => {
     it('should prevent multiple simultaneous refresh attempts', async () => {
       mockLocalStorage.getItem.mockReturnValue('refresh-token');
       vi.mocked(AuthService.refreshToken).mockImplementation(
-        () => new Promise(resolve => setTimeout(resolve, 100))
+        () =>
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  access_token: 'new-access-token',
+                  refresh_token: 'new-refresh-token',
+                }),
+              100
+            )
+          )
       );
 
       // Start first refresh
       const promise1 = useAuthStore.getState().refreshToken();
-      
+
       // Start second refresh immediately
       const promise2 = useAuthStore.getState().refreshToken();
 
@@ -223,17 +254,13 @@ describe('AuthStore', () => {
   describe('checkAuth', () => {
     it('should check auth successfully with valid tokens', async () => {
       const mockUser = { id: '1', name: 'Test User', type: 'personal' };
-      const mockTokens = { access: 'valid-token', refresh: 'refresh-token' };
 
       mockSessionStorage.getItem.mockReturnValue('valid-token');
       mockLocalStorage.getItem.mockReturnValue('refresh-token');
       vi.mocked(AuthService.getCurrentUser).mockResolvedValue(mockUser);
 
-      // Mock token validation
-      vi.doMock('../../auth/tokenRefresh', () => ({
-        isTokenExpired: () => false,
-        shouldRefreshToken: () => false,
-      }));
+      // Mock TokenManager.isTokenValid to return true
+      vi.spyOn(TokenManager, 'isTokenValid').mockReturnValue(true);
 
       await useAuthStore.getState().checkAuth();
 
@@ -258,22 +285,24 @@ describe('AuthStore', () => {
   describe('token refresh timer', () => {
     it('should start and stop token refresh timer', () => {
       const store = useAuthStore.getState();
-      
+
       // Mock authenticated state
       useAuthStore.setState({
         isAuthenticated: true,
         tokens: { access: 'token', refresh: 'refresh' },
       });
 
-      mockSessionStorage.getItem.mockReturnValue('valid-token');
+      mockSessionStorage.getItem.mockReturnValue(
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyLCJleHAiOjk5OTk5OTk5OTl9.Lp-38GvTuOjaTZ0-OOGgJlp6HcqODGFcpDe5bAW8VvY'
+      );
 
       store.startTokenRefreshTimer();
-      
+
       const state = useAuthStore.getState();
       expect(state.refreshTimer).not.toBeNull();
 
       store.stopTokenRefreshTimer();
-      
+
       const finalState = useAuthStore.getState();
       expect(finalState.refreshTimer).toBeNull();
     });

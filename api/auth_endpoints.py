@@ -74,13 +74,15 @@ class OrganizationMemberInfo(BaseModel):
     sessionCode: str
     ac_id: str
 
+class AuthTokens(BaseModel):
+    """인증 토큰 모델"""
+    access: str
+    refresh: str
+
 class LoginResponse(BaseModel):
     """로그인 응답 모델"""
-    success: bool
-    message: str
-    user: Optional[Union[PersonalUserInfo, OrganizationAdminInfo, OrganizationMemberInfo]] = None
-    token: Optional[str] = None
-    expires_at: Optional[str] = None
+    user: Union[PersonalUserInfo, OrganizationAdminInfo, OrganizationMemberInfo]
+    tokens: AuthTokens
 
 class TokenPayload(BaseModel):
     """JWT 토큰 페이로드"""
@@ -93,13 +95,28 @@ class TokenPayload(BaseModel):
 # 유틸리티 함수들
 def create_access_token(user_data: Dict[str, Any]) -> str:
     """JWT 액세스 토큰 생성"""
-    expire = datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
+    expire = datetime.utcnow() + timedelta(hours=1)  # 1시간
     payload = {
         "user_id": user_data["id"],
         "user_type": user_data["type"],
         "ac_id": user_data["ac_id"],
         "exp": expire,
-        "iat": datetime.utcnow()
+        "iat": datetime.utcnow(),
+        "token_type": "access"
+    }
+    
+    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+def create_refresh_token(user_data: Dict[str, Any]) -> str:
+    """JWT 리프레시 토큰 생성"""
+    expire = datetime.utcnow() + timedelta(days=7)  # 7일
+    payload = {
+        "user_id": user_data["id"],
+        "user_type": user_data["type"],
+        "ac_id": user_data["ac_id"],
+        "exp": expire,
+        "iat": datetime.utcnow(),
+        "token_type": "refresh"
     }
     
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
@@ -123,7 +140,7 @@ async def log_login_attempt(db: AsyncSession, ac_gid: str, success: bool = True)
             await db.execute(
                 text("""
                     INSERT INTO mwd_log_login_account (login_date, user_agent, ac_gid) 
-                    VALUES (now(), :user_agent::json, :ac_gid::uuid)
+                    VALUES (now(), CAST(:user_agent AS json), CAST(:ac_gid AS uuid))
                 """),
                 {"user_agent": user_agent_json, "ac_gid": ac_gid}
             )
@@ -191,9 +208,9 @@ async def login(
             
             if not account_row or account_row.ac_use != 'Y':
                 logger.info("로그인 실패: 계정 정보 없음 또는 비활성화된 계정")
-                return LoginResponse(
-                    success=False,
-                    message="아이디 또는 비밀번호가 올바르지 않습니다."
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="아이디 또는 비밀번호가 올바르지 않습니다."
                 )
             
             pe_seq, pe_name, ac_gid, ac_use, ac_id = account_row
@@ -201,9 +218,9 @@ async def login(
             # 기관 관리자 계정인지 확인 (pe_seq = -1인 경우)
             if pe_seq == -1:
                 logger.info(f"기관 관리자 계정이 일반 로그인 시도함: {ac_id}")
-                return LoginResponse(
-                    success=False,
-                    message="기관 관리자 계정은 기관 로그인을 사용해주세요."
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="기관 관리자 계정은 기관 로그인을 사용해주세요."
                 )
             
             # 기관 소속 사용자인지 확인
@@ -220,9 +237,9 @@ async def login(
             
             if institute_count > 0:
                 logger.info(f"기관 소속 사용자가 일반 로그인 시도함: {ac_id}")
-                return LoginResponse(
-                    success=False,
-                    message="기관 소속 사용자는 기관 로그인을 사용해주세요."
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="기관 소속 사용자는 기관 로그인을 사용해주세요."
                 )
             
             # 로그인 로그 기록
@@ -240,7 +257,7 @@ async def login(
                         FROM mwd_person pe, mwd_account ac
                         LEFT OUTER JOIN mwd_choice_result cr ON cr.ac_gid = ac.ac_gid
                         LEFT OUTER JOIN mwd_answer_progress ap ON ap.cr_seq = cr.cr_seq
-                        WHERE ac.ac_gid = :ac_gid::uuid
+                        WHERE ac.ac_gid = CAST(:ac_gid AS uuid)
                         AND pe.pe_seq = ac.pe_seq AND ac.ac_use = 'Y'
                     ) t WHERE rnum = 1
                 """),
@@ -254,7 +271,7 @@ async def login(
                 text("""
                     SELECT pe.pe_sex 
                     FROM mwd_account ac, mwd_person pe 
-                    WHERE ac.ac_gid = :ac_gid::uuid
+                    WHERE ac.ac_gid = CAST(:ac_gid AS uuid)
                     AND pe.pe_seq = ac.pe_seq
                 """),
                 {"ac_gid": str(ac_gid)}
@@ -275,17 +292,17 @@ async def login(
             )
             
             # JWT 토큰 생성
-            token = create_access_token(user_info.dict())
-            expires_at = (datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)).isoformat()
+            access_token = create_access_token(user_info.dict())
+            refresh_token = create_refresh_token(user_info.dict())
             
             logger.info(f"개인 로그인 성공: {user_info.id}")
             
             return LoginResponse(
-                success=True,
-                message="로그인 성공",
                 user=user_info,
-                token=token,
-                expires_at=expires_at
+                tokens=AuthTokens(
+                    access=access_token,
+                    refresh=refresh_token
+                )
             )
         
         # 2. 기관 로그인 (관리자 또는 소속 사용자)
@@ -293,9 +310,9 @@ async def login(
             logger.info(f"기관 로그인 시도: username={request.username}")
             
             if not request.sessionCode:
-                return LoginResponse(
-                    success=False,
-                    message="세션코드가 필요합니다."
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="세션코드가 필요합니다."
                 )
             
             # 회차코드 유효성 검사
@@ -312,9 +329,9 @@ async def login(
             
             if not turn_row:
                 logger.info("세션코드 검증 실패: 유효하지 않은 코드")
-                return LoginResponse(
-                    success=False,
-                    message="유효하지 않은 세션코드입니다."
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="유효하지 않은 세션코드입니다."
                 )
             
             ins_seq, tur_seq = turn_row
@@ -345,17 +362,17 @@ async def login(
                 )
                 
                 # JWT 토큰 생성
-                token = create_access_token(admin_info.dict())
-                expires_at = (datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)).isoformat()
+                access_token = create_access_token(admin_info.dict())
+                refresh_token = create_refresh_token(admin_info.dict())
                 
                 logger.info(f"기관 관리자 로그인 성공: {admin_info.id}")
                 
                 return LoginResponse(
-                    success=True,
-                    message="기관 관리자 로그인 성공",
                     user=admin_info,
-                    token=token,
-                    expires_at=expires_at
+                    tokens=AuthTokens(
+                        access=access_token,
+                        refresh=refresh_token
+                    )
                 )
             
             # 기관 소속 개인 사용자로 로그인 시도 (2순위)
@@ -392,37 +409,101 @@ async def login(
                 )
                 
                 # JWT 토큰 생성
-                token = create_access_token(member_info.dict())
-                expires_at = (datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)).isoformat()
+                access_token = create_access_token(member_info.dict())
+                refresh_token = create_refresh_token(member_info.dict())
                 
                 logger.info(f"기관 소속 사용자 로그인 성공: {member_info.id}")
                 
                 return LoginResponse(
-                    success=True,
-                    message="기관 소속 사용자 로그인 성공",
                     user=member_info,
-                    token=token,
-                    expires_at=expires_at
+                    tokens=AuthTokens(
+                        access=access_token,
+                        refresh=refresh_token
+                    )
                 )
             
             logger.info("기관 로그인 실패: 일치하는 계정 정보 없음")
-            return LoginResponse(
-                success=False,
-                message="아이디, 비밀번호 또는 세션코드가 올바르지 않습니다."
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="아이디, 비밀번호 또는 세션코드가 올바르지 않습니다."
             )
         
         else:
             logger.info(f"로그인 실패: 지원하지 않는 로그인 타입: {request.loginType}")
-            return LoginResponse(
-                success=False,
-                message="지원하지 않는 로그인 타입입니다."
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="지원하지 않는 로그인 타입입니다."
             )
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"로그인 처리 중 오류: {e}")
-        return LoginResponse(
-            success=False,
-            message="로그인 처리 중 오류가 발생했습니다."
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="로그인 처리 중 오류가 발생했습니다."
+        )
+
+class RefreshTokenRequest(BaseModel):
+    """리프레시 토큰 요청 모델"""
+    refresh_token: str
+
+class RefreshTokenResponse(BaseModel):
+    """리프레시 토큰 응답 모델"""
+    access_token: str
+    refresh_token: str
+
+@router.post(
+    "/refresh",
+    response_model=RefreshTokenResponse,
+    summary="토큰 갱신",
+    description="리프레시 토큰을 사용하여 새로운 액세스 토큰을 발급합니다"
+)
+async def refresh_access_token(
+    request: RefreshTokenRequest,
+    db: AsyncSession = Depends(get_async_session)
+) -> RefreshTokenResponse:
+    """리프레시 토큰으로 새로운 액세스 토큰 발급"""
+    try:
+        # 리프레시 토큰 검증
+        payload = verify_token(request.refresh_token)
+        
+        if not payload or payload.get("token_type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token"
+            )
+        
+        # 사용자 정보 조회
+        user_id = payload["user_id"]
+        user_type = payload["user_type"]
+        ac_id = payload["ac_id"]
+        
+        # 새로운 토큰 생성을 위한 사용자 데이터
+        user_data = {
+            "id": user_id,
+            "type": user_type,
+            "ac_id": ac_id
+        }
+        
+        # 새로운 토큰 생성
+        new_access_token = create_access_token(user_data)
+        new_refresh_token = create_refresh_token(user_data)
+        
+        logger.info(f"토큰 갱신 성공: {user_id}")
+        
+        return RefreshTokenResponse(
+            access_token=new_access_token,
+            refresh_token=new_refresh_token
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"토큰 갱신 중 오류: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="토큰 갱신 중 오류가 발생했습니다."
         )
 
 @router.post(
@@ -482,7 +563,7 @@ async def get_current_user_info(
                     SELECT pe.pe_name, ac.ac_id, pe.pe_sex
                     FROM mwd_account ac
                     JOIN mwd_person pe ON pe.pe_seq = ac.pe_seq
-                    WHERE ac.ac_gid = :user_id::uuid
+                    WHERE ac.ac_gid = CAST(:user_id AS uuid)
                 """),
                 {"user_id": user_id}
             )
@@ -505,7 +586,7 @@ async def get_current_user_info(
                         SELECT i.ins_manager1_name as name, ac.ac_id
                         FROM mwd_account ac
                         JOIN mwd_institute i ON i.ins_seq = ac.ins_seq
-                        WHERE ac.ac_gid = :user_id::uuid AND ac.pe_seq = -1
+                        WHERE ac.ac_gid = CAST(:user_id AS uuid) AND ac.pe_seq = -1
                     """),
                     {"user_id": user_id}
                 )
@@ -515,7 +596,7 @@ async def get_current_user_info(
                         SELECT pe.pe_name as name, ac.ac_id
                         FROM mwd_account ac
                         JOIN mwd_person pe ON pe.pe_seq = ac.pe_seq
-                        WHERE ac.ac_gid = :user_id::uuid
+                        WHERE ac.ac_gid = CAST(:user_id AS uuid)
                     """),
                     {"user_id": user_id}
                 )
